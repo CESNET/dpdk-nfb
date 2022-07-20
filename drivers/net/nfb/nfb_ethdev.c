@@ -510,6 +510,7 @@ static const struct eth_dev_ops ops = {
 static int
 nfb_eth_dev_init(struct rte_eth_dev *dev)
 {
+	int i;
 	int ret;
 	uint32_t mac_count;
 	struct rte_eth_dev_data *data = dev->data;
@@ -583,6 +584,23 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 	dev->rx_pkt_burst = nfb_eth_ndp_rx;
 	dev->tx_pkt_burst = nfb_eth_ndp_tx;
 
+	internals->queue_map_rx = rte_malloc("NFB queue map",
+			sizeof(*internals->queue_map_rx) *
+			(priv->max_rx_queues + priv->max_tx_queues), 0);
+	if (internals->queue_map_rx == NULL) {
+		ret = -ENOMEM;
+		goto err_alloc_queue_map;
+	}
+	internals->queue_map_tx = internals->queue_map_rx + priv->max_rx_queues;
+
+	/* default queue mapping is 1:1 */
+	for (i = 0; i < priv->max_rx_queues; i++) {
+		internals->queue_map_rx[i] = i;
+	}
+	for (i = 0; i < priv->max_tx_queues; i++) {
+		internals->queue_map_tx[i] = i;
+	}
+
 	/* Set function callbacks for Ethernet API */
 	dev->dev_ops = &ops;
 
@@ -622,6 +640,8 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 	return 0;
 
 err_malloc_mac_addrs:
+	rte_free(internals->queue_map_rx);
+err_alloc_queue_map:
 	nfb_nc_rxmac_deinit(internals->rxmac, internals->max_rxmac);
 	nfb_nc_txmac_deinit(internals->txmac, internals->max_txmac);
 	nfb_close(internals->nfb);
@@ -653,6 +673,7 @@ nfb_eth_dev_uninit(struct rte_eth_dev *dev)
 	nfb_nc_txmac_deinit(internals->txmac, internals->max_txmac);
 	nfb_close(internals->nfb);
 
+	rte_free(internals->queue_map_rx);
 	rte_free(internals);
 
 	RTE_LOG(INFO, PMD, "NFB device ("

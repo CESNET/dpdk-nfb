@@ -63,6 +63,7 @@ nfb_eth_rx_queue_setup(struct rte_eth_dev *dev,
 	struct pmd_internals *internals = dev->process_private;
 
 	struct ndp_rx_queue *rxq;
+	int nfb_qid;
 	int ret;
 
 	rxq = rte_zmalloc_socket("ndp rx queue",
@@ -77,17 +78,19 @@ nfb_eth_rx_queue_setup(struct rte_eth_dev *dev,
 
 	rxq->flags = 0;
 
-	ret = nfb_eth_rx_queue_init(internals->nfb,
-		rx_queue_id,
-		dev->data->port_id,
-		mb_pool,
-		rxq);
+	/* nfb queue id doesn't neccessary corresponds to txq_id */
+	nfb_qid = internals->queue_map_rx[rx_queue_id];
 
-	if (ret == 0)
-		dev->data->rx_queues[rx_queue_id] = rxq;
-	else
-		rte_free(rxq);
+	ret = nfb_eth_rx_queue_init(internals->nfb, nfb_qid,
+			dev->data->port_id, mb_pool, rxq);
+	if (ret)
+		goto err_queue_init;
 
+	dev->data->rx_queues[rx_queue_id] = rxq;
+	return 0;
+
+err_queue_init:
+	rte_free(rxq);
 	return ret;
 }
 
