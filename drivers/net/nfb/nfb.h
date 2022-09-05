@@ -27,6 +27,7 @@
 #define PCI_DEVICE_ID_NFB_200G2QL 0xc250
 #define PCI_DEVICE_ID_NFB_200G2QL_E1 0xc251
 #define PCI_DEVICE_ID_FB2CGG3   0x00d0
+#define PCI_DEVICE_ID_FB2CGHH   0x00d2
 #define PCI_DEVICE_ID_FB2CGG3D  0xc240
 
 /* Max index of ndp rx/tx queues */
