@@ -14,6 +14,7 @@
 #include <netcope/mdio_if_info.h>
 /* TODO: move queue map info to queue_mapper.h (can be unit in hw) */
 #include <netcope/info.h>
+#include <netcope/nic_rss.h>
 
 #include "nfb_rx.h"
 #include "nfb_tx.h"
@@ -49,6 +50,7 @@
 static const char * const VALID_KEYS[] = {NFB_ARG_RXHDR_DYNFIELD, NFB_ARG_QUEUE_DRIVER, NULL};
 
 struct eth_node{
+	int channel_id;
 	struct mdio_if_info if_info;
 };
 
@@ -69,6 +71,8 @@ struct pmd_internals {
 	struct nfb_device *nfb;
 	int nfb_id;
 	int flags;
+
+	struct nc_nic_rss *comp_rss;
 };
 
 struct pmd_priv {
