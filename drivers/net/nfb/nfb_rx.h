@@ -13,6 +13,7 @@
 #include <rte_mbuf.h>
 #include <rte_mbuf_dyn.h>
 #include <rte_ethdev.h>
+#include <rte_time.h>
 
 extern uint64_t nfb_timestamp_rx_dynflag;
 extern int nfb_timestamp_dynfield_offset;
@@ -33,6 +34,10 @@ struct ndp_rx_queue {
 
 	struct rte_mempool *mb_pool; /* memory pool to allocate packets */
 	uint16_t buf_size;           /* mbuf size */
+
+	int16_t  timestamp_off;
+	int16_t  timestamp_vld_off;
+	uint8_t  timestamp_vld_mask;
 
 	volatile uint64_t rx_pkts;   /* packets read */
 	volatile uint64_t rx_bytes;  /* bytes read */
@@ -124,6 +129,29 @@ nfb_eth_rx_queue_start(struct rte_eth_dev *dev, uint16_t rxq_id);
 int
 nfb_eth_rx_queue_stop(struct rte_eth_dev *dev, uint16_t rxq_id);
 
+static inline void nfb_rx_fetch_timestamp(struct ndp_rx_queue *q, struct rte_mbuf *mbuf,
+		const unsigned char *header, int header_length)
+{
+	rte_mbuf_timestamp_t timestamp;
+
+	/* INFO: already checked in nfb_eth_rx_queue_init */
+	if (/*nfb_timestamp_dynfield_offset < 0 || */q->timestamp_off < 0)
+		return;
+
+	if (header_length < q->timestamp_off + 8)
+		return;
+
+	/* seconds */
+	timestamp   = rte_le_to_cpu_32(*((const uint32_t *) (header + q->timestamp_off + 4)));
+	timestamp  *= NSEC_PER_SEC;
+	/* nanoseconds */
+	timestamp  += rte_le_to_cpu_32(*((const uint32_t *) (header + q->timestamp_off + 0)));
+
+	*nfb_timestamp_dynfield(mbuf) = timestamp;
+	if (header_length > (q->timestamp_vld_off) && header[q->timestamp_vld_off] & q->timestamp_vld_mask)
+		mbuf->ol_flags |= nfb_timestamp_rx_dynflag;
+}
+
 /**
  * DPDK callback for RX.
  *
@@ -197,21 +225,7 @@ nfb_eth_ndp_rx(void *queue,
 			mbuf->port = ndp->in_port;
 			mbuf->ol_flags = 0;
 
-			if (nfb_timestamp_dynfield_offset >= 0) {
-				rte_mbuf_timestamp_t timestamp;
-
-				/* nanoseconds */
-				timestamp =
-					rte_le_to_cpu_32(*((uint32_t *)
-					(packets[i].header + 4)));
-				timestamp <<= 32;
-				/* seconds */
-				timestamp |=
-					rte_le_to_cpu_32(*((uint32_t *)
-					(packets[i].header + 8)));
-				*nfb_timestamp_dynfield(mbuf) = timestamp;
-				mbuf->ol_flags |= nfb_timestamp_rx_dynflag;
-			}
+			nfb_rx_fetch_timestamp(ndp, mbuf, packets[i].header, packets[i].header_length);
 
 			bufs[num_rx++] = mbuf;
 			num_bytes += packet_size;
