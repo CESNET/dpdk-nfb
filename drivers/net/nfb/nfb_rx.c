@@ -12,6 +12,13 @@
 uint64_t nfb_timestamp_rx_dynflag;
 int nfb_timestamp_dynfield_offset = -1;
 
+int nfb_ndp_df_header_offset;
+int nfb_ndp_df_header_length;
+int nfb_ndp_df_flags;
+uint64_t nfb_ndp_df_header_vld;
+
+int nfb_ndp_df_header_enable = 0;
+
 int
 nfb_eth_rx_queue_start(struct rte_eth_dev *dev, uint16_t rxq_id)
 {

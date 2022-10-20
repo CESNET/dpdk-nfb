@@ -274,6 +274,43 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 	int ret;
 	struct rte_eth_conf *dev_conf = &dev->data->dev_conf;
 
+	static struct rte_mbuf_dynflag df_ndp_hdr_vld = {
+		.name = "rte_net_nfb_dynflag_header_vld",
+	};
+
+	static struct rte_mbuf_dynfield df_ndp_hdr_off = {
+		.name = "rte_net_nfb_dynfield_header_offset",
+		.align = 2,
+		.size = 2,
+	};
+
+	static struct rte_mbuf_dynfield df_ndp_hdr_len = {
+		.name = "rte_net_nfb_dynfield_header_len",
+		.align = 2,
+		.size = 2,
+	};
+
+	static struct rte_mbuf_dynfield df_ndp_flags = {
+		.name = "rte_net_nfb_dynfield_ndp_flags",
+		.align = 2,
+		.size = 2,
+	};
+
+	if (nfb_ndp_df_header_enable) {
+		ret = rte_mbuf_dynflag_register(&df_ndp_hdr_vld);
+		nfb_ndp_df_header_vld = RTE_BIT64(ret);
+		nfb_ndp_df_header_offset = rte_mbuf_dynfield_register(&df_ndp_hdr_off);
+		nfb_ndp_df_header_length = rte_mbuf_dynfield_register(&df_ndp_hdr_len);
+		nfb_ndp_df_flags = rte_mbuf_dynfield_register(&df_ndp_flags);
+
+		if (ret == -1 || nfb_ndp_df_header_offset == -1 ||
+				nfb_ndp_df_header_length == -1 ||
+				nfb_ndp_df_flags == -1) {
+			ret = -rte_errno;
+			goto err_hdr_register;
+		}
+	}
+
 	if (dev_conf->rxmode.offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP) {
 		ret = rte_mbuf_dyn_rx_timestamp_register
 				(&nfb_timestamp_dynfield_offset,
@@ -289,6 +326,7 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 	return 0;
 
 err_ts_register:
+err_hdr_register:
 	nfb_eth_dev_uninit(dev);
 	return ret;
 }
@@ -733,6 +771,13 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 			ret = -EINVAL;
 			goto err_devargs_inval;
 		}
+
+		if ((arg_val = rte_kvargs_get(kvlist, NFB_ARG_RXHDR_DYNFIELD))) {
+			if (strcmp(arg_val, "1") == 0) {
+				nfb_ndp_df_header_enable = 1;
+			}
+		}
+
 		rte_kvargs_free(kvlist);
 	}
 
@@ -974,3 +1019,5 @@ static struct rte_pci_driver nfb_eth_driver = {
 RTE_PMD_REGISTER_PCI(RTE_NFB_DRIVER_NAME, nfb_eth_driver);
 RTE_PMD_REGISTER_PCI_TABLE(RTE_NFB_DRIVER_NAME, nfb_pci_id_table);
 RTE_PMD_REGISTER_KMOD_DEP(RTE_NFB_DRIVER_NAME, "* nfb");
+RTE_PMD_REGISTER_PARAM_STRING(RTE_NFB_DRIVER_NAME,
+		NFB_ARG_RXHDR_DYNFIELD"=<0|1>");

@@ -40,7 +40,9 @@
 #define RTE_NFB_DRIVER_NAME net_nfb
 
 /* Device arguments */
-static const char * const VALID_KEYS[] = {NULL};
+#define NFB_ARG_RXHDR_DYNFIELD "rxhdr_dynfield"
+
+static const char * const VALID_KEYS[] = {NFB_ARG_RXHDR_DYNFIELD, NULL};
 
 struct eth_node{
 	struct mdio_if_info if_info;
