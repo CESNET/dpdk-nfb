@@ -510,22 +510,19 @@ static const struct eth_dev_ops ops = {
  *   0 on success, a negative errno value otherwise.
  */
 static int
-nfb_eth_dev_init(struct rte_eth_dev *dev)
+nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 {
 	int i;
+	int cnt;
 	int ret;
-	uint32_t mac_count;
 	struct rte_eth_dev_data *data = dev->data;
 	struct pmd_internals *internals;
+	struct nfb_init_params *params = init_data;
+	struct nc_ifc_info *ifc = params->ifc_info;
+	struct nc_ifc_map_info *mi = &params->map_info;
 	struct pmd_priv *priv = data->dev_private;
-	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
-	struct rte_pci_addr *pci_addr = &pci_dev->addr;
 	struct rte_ether_addr eth_addr_init;
 	struct rte_kvargs *kvlist;
-
-	RTE_LOG(INFO, PMD, "Initializing NFB device (" PCI_PRI_FMT ")\n",
-		pci_addr->domain, pci_addr->bus, pci_addr->devid,
-		pci_addr->function);
 
 	internals = (struct pmd_internals *) rte_zmalloc_socket("nfb_internals",
 			sizeof(struct pmd_internals), RTE_CACHE_LINE_SIZE,
@@ -536,11 +533,6 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 	}
 
 	dev->process_private = internals;
-
-	snprintf(internals->nfb_dev, PATH_MAX,
-		"/dev/nfb/by-pci-slot/" PCI_PRI_FMT,
-		pci_addr->domain, pci_addr->bus, pci_addr->devid,
-		pci_addr->function);
 
 	/* Check validity of device args */
 	if (dev->device->devargs != NULL &&
@@ -557,23 +549,13 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 		rte_kvargs_free(kvlist);
 	}
 
-	/*
-	 * Get number of available DMA RX and TX queues, which is maximum
-	 * number of queues that can be created and store it in private device
-	 * data structure.
-	 */
-	internals->nfb = nfb_open(internals->nfb_dev);
+	/* Open device handle */
+	internals->nfb = nfb_open(params->path);
 	if (internals->nfb == NULL) {
-		RTE_LOG(ERR, PMD, "nfb_open(): failed to open %s",
-			internals->nfb_dev);
+		RTE_LOG(ERR, PMD, "nfb_open(): failed to open %s", params->path);
 		ret = -EINVAL;
 		goto err_nfb_open;
 	}
-	priv->max_rx_queues = ndp_get_rx_queue_available_count(internals->nfb);
-	priv->max_tx_queues = ndp_get_tx_queue_available_count(internals->nfb);
-
-	RTE_LOG(INFO, PMD, "Available NDP queues RX: %u TX: %u\n",
-		data->nb_rx_queues, data->nb_tx_queues);
 
 	nfb_nc_rxmac_init(internals->nfb,
 		internals->rxmac,
@@ -586,6 +568,10 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 	dev->rx_pkt_burst = nfb_eth_ndp_rx;
 	dev->tx_pkt_burst = nfb_eth_ndp_tx;
 
+	/* Get number of available DMA RX and TX queues */
+	priv->max_rx_queues = ifc->rxq_cnt;
+	priv->max_tx_queues = ifc->txq_cnt;
+
 	internals->queue_map_rx = rte_malloc("NFB queue map",
 			sizeof(*internals->queue_map_rx) *
 			(priv->max_rx_queues + priv->max_tx_queues), 0);
@@ -595,12 +581,18 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 	}
 	internals->queue_map_tx = internals->queue_map_rx + priv->max_rx_queues;
 
-	/* default queue mapping is 1:1 */
-	for (i = 0; i < priv->max_rx_queues; i++) {
-		internals->queue_map_rx[i] = i;
+	cnt = 0;
+	for (i = 0; i < mi->rxq_cnt; i++) {
+		if (mi->rxq[i].ifc == ifc->id) {
+			internals->queue_map_rx[cnt++] = mi->rxq[i].id;
+		}
 	}
-	for (i = 0; i < priv->max_tx_queues; i++) {
-		internals->queue_map_tx[i] = i;
+
+	cnt = 0;
+	for (i = 0; i < mi->txq_cnt; i++) {
+		if (mi->txq[i].ifc == ifc->id) {
+			internals->queue_map_tx[cnt++] = mi->txq[i].id;
+		}
 	}
 
 	/* Set function callbacks for Ethernet API */
@@ -611,9 +603,9 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 
 	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
 		/* Allocate space for MAC addresses */
-		mac_count = nfb_eth_get_max_mac_address_count(dev);
+		cnt = nfb_eth_get_max_mac_address_count(dev);
 		data->mac_addrs = rte_zmalloc(data->name,
-			sizeof(struct rte_ether_addr) * mac_count, RTE_CACHE_LINE_SIZE);
+			sizeof(struct rte_ether_addr) * cnt, RTE_CACHE_LINE_SIZE);
 		if (data->mac_addrs == NULL) {
 			RTE_LOG(ERR, PMD, "Could not alloc space for MAC address!\n");
 			ret = -ENOMEM;
@@ -634,10 +626,6 @@ nfb_eth_dev_init(struct rte_eth_dev *dev)
 		data->dev_flags |= RTE_ETH_DEV_AUTOFILL_QUEUE_XSTATS;
 	}
 
-	RTE_LOG(INFO, PMD, "NFB device ("
-		PCI_PRI_FMT ") successfully initialized\n",
-		pci_addr->domain, pci_addr->bus, pci_addr->devid,
-		pci_addr->function);
 
 	return 0;
 
@@ -667,8 +655,6 @@ err_alloc_internals:
 static int
 nfb_eth_dev_uninit(struct rte_eth_dev *dev)
 {
-	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
-	struct rte_pci_addr *pci_addr = &pci_dev->addr;
 	struct pmd_internals *internals = dev->process_private;
 
 	nfb_nc_rxmac_deinit(internals->rxmac, internals->max_rxmac);
@@ -677,11 +663,6 @@ nfb_eth_dev_uninit(struct rte_eth_dev *dev)
 
 	rte_free(internals->queue_map_rx);
 	rte_free(internals);
-
-	RTE_LOG(INFO, PMD, "NFB device ("
-		PCI_PRI_FMT ") successfully uninitialized\n",
-		pci_addr->domain, pci_addr->bus, pci_addr->devid,
-		pci_addr->function);
 
 	return 0;
 }
@@ -712,8 +693,66 @@ static int
 nfb_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 		struct rte_pci_device *pci_dev)
 {
-	return rte_eth_dev_pci_generic_probe(pci_dev,
-		sizeof(struct pmd_priv), nfb_eth_dev_init);
+	int i;
+	int ret;
+	int basename_len;
+	char name[RTE_ETH_NAME_MAX_LEN];
+	char path[PATH_MAX];
+
+	struct nc_composed_device_info comp_dev_info;
+	struct nc_ifc_info *ifc;
+	struct nfb_device *nfb_dev;
+	struct nfb_init_params params;
+
+	rte_pci_device_name(&pci_dev->addr, name, sizeof(name));
+	basename_len = strlen(name);
+
+	/* NFB device can be composed from multiple PCI devices,
+	 * find the base char device ID for the current PCI device */
+	ret = nc_get_composed_device_info_by_pci(NULL, name, &comp_dev_info);
+	if (ret) {
+		RTE_LOG(ERR, PMD, "Could not find NFB device for %s\n", name);
+		return -ENODEV;
+	}
+
+	ret = snprintf(path, sizeof(path), NFB_BASE_DEV_PATH "%d", comp_dev_info.nfb_id);
+	RTE_ASSERT(ret > 0 && ret < sizeof(path));
+
+	nfb_dev = nfb_open(path);
+	if (nfb_dev == NULL) {
+		RTE_LOG(ERR, PMD, "nfb_open(): failed to open %s", path);
+		return -EINVAL;
+	}
+
+	params.path = path;
+
+	ret = nc_ifc_map_info_create_ordinary(nfb_dev, &params.map_info);
+	if (ret) {
+		/* TODO: create old-style mapping */
+	}
+
+	params.nfb_id = comp_dev_info.nfb_id;
+	for (i = 0; i < params.map_info.ifc_cnt; i++) {
+		ifc = params.ifc_info = &params.map_info.ifc[i];
+
+		/* Skip interfaces which doesn't belong to this PCI device */
+		if (ifc->ep != comp_dev_info.ep_index ||
+				(ifc->flags & NC_IFC_INFO_FLAG_ACTIVE) == 0)
+			continue;
+
+		snprintf(name + basename_len, sizeof(name) - basename_len,
+				"_nfb%d_eth%d", comp_dev_info.nfb_id, params.ifc_info->id);
+
+		ret = rte_eth_dev_create(&pci_dev->device, name,
+				sizeof(struct pmd_priv),
+				eth_dev_pci_specific_init, pci_dev,
+				nfb_eth_dev_init, &params);
+	}
+
+	nc_map_info_destroy(&params.map_info);
+	nfb_close(nfb_dev);
+
+	return 0;
 }
 
 /**
@@ -728,9 +767,9 @@ nfb_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
  *   0 on success, the function cannot fail.
  */
 static int
-nfb_eth_pci_remove(struct rte_pci_device *pci_dev)
+nfb_eth_pci_remove(struct rte_pci_device *pci_dev __rte_unused)
 {
-	return rte_eth_dev_pci_generic_remove(pci_dev, nfb_eth_dev_uninit);
+	return 0;
 }
 
 static struct rte_pci_driver nfb_eth_driver = {
