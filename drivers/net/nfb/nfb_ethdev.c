@@ -444,15 +444,29 @@ nfb_eth_link_update(struct rte_eth_dev *dev,
 static int
 nfb_eth_dev_set_link_up(struct rte_eth_dev *dev)
 {
-	struct pmd_internals *internals = (struct pmd_internals *)
-		dev->process_private;
+	struct pmd_internals *internals = dev->process_private;
+	struct mdio_if_info *if_info;
 
+	uint16_t reg;
 	uint16_t i;
+
 	for (i = 0; i < internals->max_rxmac; ++i)
 		nc_rxmac_enable(internals->rxmac[i]);
 
 	for (i = 0; i < internals->max_txmac; ++i)
 		nc_txmac_enable(internals->txmac[i]);
+
+	if (internals->max_eth == 0)
+		return -ENODEV;
+
+	if_info = &internals->eth_node[0].if_info;
+
+	/* Reset PMA/PMD Reset flag if necessary */
+	reg = if_info->mdio_read(if_info->dev, if_info->prtad, 1, 0);
+	if (reg & (1 << 15)) {
+		reg &= ~(1 << 15);
+		if_info->mdio_write(if_info->dev, if_info->prtad, 1, 0, reg);
+	}
 
 	return 0;
 }
@@ -469,16 +483,29 @@ nfb_eth_dev_set_link_up(struct rte_eth_dev *dev)
 static int
 nfb_eth_dev_set_link_down(struct rte_eth_dev *dev)
 {
-	struct pmd_internals *internals = (struct pmd_internals *)
-		dev->process_private;
+	struct pmd_internals *internals = dev->process_private;
+	struct mdio_if_info *if_info;
 
+	uint16_t reg;
 	uint16_t i;
+
 	for (i = 0; i < internals->max_rxmac; ++i)
 		nc_rxmac_disable(internals->rxmac[i]);
 
 	for (i = 0; i < internals->max_txmac; ++i)
 		nc_txmac_disable(internals->txmac[i]);
 
+	if (internals->max_eth == 0)
+		return -ENODEV;
+
+	if_info = &internals->eth_node[0].if_info;
+
+	/* Set PMA/PMD Reset flag if necessary */
+	reg = if_info->mdio_read(if_info->dev, if_info->prtad, 1, 0);
+	if (!(reg & (1 << 15))) {
+		reg |= (1 << 15);
+		if_info->mdio_write(if_info->dev, if_info->prtad, 1, 0, reg);
+	}
 	return 0;
 }
 
