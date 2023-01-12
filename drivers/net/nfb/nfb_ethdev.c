@@ -330,15 +330,21 @@ nfb_eth_dev_info(struct rte_eth_dev *dev,
 	struct rte_eth_dev_info *dev_info)
 {
 	struct pmd_priv *priv = dev->data->dev_private;
+	struct pmd_internals *internals = dev->process_private;
 
 	dev_info->max_mac_addrs = nfb_eth_get_max_mac_address_count(dev);
 
 	dev_info->max_rx_pktlen = (uint32_t)-1;
 	dev_info->max_rx_queues = priv->max_rx_queues;
 	dev_info->max_tx_queues = priv->max_tx_queues;
-	dev_info->speed_capa = RTE_ETH_LINK_SPEED_100G;
+	dev_info->speed_capa = RTE_ETH_LINK_SPEED_FIXED;
 	dev_info->rx_offload_capa =
 		RTE_ETH_RX_OFFLOAD_TIMESTAMP;
+
+	if (internals->max_eth) {
+		nfb_ieee802_3_pma_pmd_get_speed_capa(&internals->eth_node[0].if_info,
+				&dev_info->speed_capa);
+	}
 
 	return 0;
 }
@@ -407,23 +413,9 @@ nfb_eth_link_update(struct rte_eth_dev *dev,
 	link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
 	link.link_autoneg = RTE_ETH_LINK_SPEED_FIXED;
 
-	if (internals->max_rxmac) {
-		nc_rxmac_read_status(internals->rxmac[0], &status);
-
-		switch (status.speed) {
-		case MAC_SPEED_10G:
-			link.link_speed = RTE_ETH_SPEED_NUM_10G;
-			break;
-		case MAC_SPEED_40G:
-			link.link_speed = RTE_ETH_SPEED_NUM_40G;
-			break;
-		case MAC_SPEED_100G:
-			link.link_speed = RTE_ETH_SPEED_NUM_100G;
-			break;
-		default:
-			link.link_speed = RTE_ETH_SPEED_NUM_NONE;
-			break;
-		}
+	if (internals->max_eth) {
+		link.link_speed = ieee802_3_get_pma_speed_value(
+				&internals->eth_node->if_info);
 	}
 
 	for (i = 0; i < internals->max_rxmac; ++i) {
