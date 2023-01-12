@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include <rte_ethdev.h>
+#include <netcope/mdio_if_info.h>
 
 #include "mdio.h"
 

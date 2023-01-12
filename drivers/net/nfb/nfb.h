@@ -11,6 +11,7 @@
 #include <nfb/ndp.h>
 #include <netcope/rxmac.h>
 #include <netcope/txmac.h>
+#include <netcope/mdio_if_info.h>
 /* TODO: move queue map info to queue_mapper.h (can be unit in hw) */
 #include <netcope/info.h>
 
@@ -41,11 +42,17 @@
 /* Device arguments */
 static const char * const VALID_KEYS[] = {NULL};
 
+struct eth_node{
+	struct mdio_if_info if_info;
+};
+
 struct pmd_internals {
 	uint16_t         max_rxmac;
 	uint16_t         max_txmac;
+	uint16_t         max_eth;
 	struct nc_rxmac **rxmac;
 	struct nc_txmac **txmac;
+	struct eth_node *eth_node;
 	int             *queue_map_rx;
 	int             *queue_map_tx;
 

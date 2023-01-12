@@ -9,6 +9,8 @@
 #include <netcope/eth.h>
 #include <netcope/rxmac.h>
 #include <netcope/txmac.h>
+#include <netcope/mdio.h>
+#include <netcope/ieee802_3.h>
 
 #include <ethdev_pci.h>
 #include <rte_kvargs.h>
@@ -19,8 +21,23 @@
 #include "nfb_rxmode.h"
 #include "nfb.h"
 
+#include "mdio.h"
+
 
 static int nfb_eth_dev_uninit(struct rte_eth_dev *dev);
+
+static int
+nfb_mdio_read(void *priv, int prtad, int devad, uint16_t addr)
+{
+        return nc_mdio_read((struct nc_mdio*) priv, prtad, devad, addr);
+}
+
+static int
+nfb_mdio_write(void *priv, int prtad, int devad, uint16_t addr,
+		uint16_t val)
+{
+	return nc_mdio_write((struct nc_mdio*) priv, prtad, devad, addr, val);
+}
 
 /**
  * Default MAC addr
@@ -92,6 +109,50 @@ nfb_nc_txmac_init(struct pmd_internals *priv, struct nfb_init_params *params)
 	return 0;
 }
 
+static int
+nfb_nc_eth_init(struct pmd_internals *priv, struct nfb_init_params *params)
+{
+	int i, j;
+	struct nc_ifc_info *ifc = params->ifc_info;
+	struct nc_ifc_map_info *mi = &params->map_info;
+
+	int node, node_cp;
+	const int32_t *prop32;
+	int proplen;
+	const void *fdt;
+
+	fdt = nfb_get_fdt(priv->nfb);
+
+	priv->eth_node = rte_zmalloc("NFB eth", sizeof(*priv->eth_node) * ifc->eth_cnt, 0);
+	if (priv->eth_node == NULL)
+		return -ENOMEM;
+
+	for (i = 0, j = 0; i < mi->eth_cnt && j < ifc->eth_cnt; i++) {
+		if (mi->eth[i].ifc != ifc->id)
+			continue;
+
+		node = nc_eth_get_pcspma_control_node(fdt, mi->eth[i].node_eth, &node_cp);
+		/* TODO: FIXME -1 */
+		priv->eth_node[j].if_info.dev = nc_mdio_open(priv->nfb, node, -1);
+		if (priv->eth_node[j].if_info.dev == NULL) {
+			RTE_LOG(WARNING, PMD, "Cannot open MDIO for Eth\n");
+			continue;
+		}
+		priv->eth_node[j].if_info.prtad = 0;
+		priv->eth_node[j].if_info.mdio_read = nfb_mdio_read;
+		priv->eth_node[j].if_info.mdio_write = nfb_mdio_write;
+
+		prop32 = fdt_getprop(fdt, node_cp, "dev", &proplen);
+		if (proplen == sizeof(*prop32)) {
+			priv->eth_node[j].if_info.prtad = fdt32_to_cpu(*prop32);
+		}
+
+		j++;
+	}
+	priv->max_eth = j;
+	return 0;
+}
+
 /**
  * Close all RX MAC components
  * @param priv
@@ -119,6 +180,15 @@ nfb_nc_txmac_deinit(struct pmd_internals *priv)
 	for (i = 0; i < priv->max_txmac; i++)
 		nc_txmac_close(priv->txmac[i]);
 	rte_free(priv->txmac);
+}
+
+static void
+nfb_nc_eth_deinit(struct pmd_internals *priv)
+{
+	uint16_t i;
+	for (i = 0; i < priv->max_eth; i++)
+		nc_mdio_close(priv->eth_node[i].if_info.dev);
+	rte_free(priv->eth_node);
 }
 
 /**
@@ -600,6 +670,7 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 
 	nfb_nc_rxmac_init(internals, params);
 	nfb_nc_txmac_init(internals, params);
+	nfb_nc_eth_init(internals, params);
 
 	/* Set rx, tx burst functions */
 	dev->rx_pkt_burst = nfb_eth_ndp_rx;
@@ -675,6 +746,7 @@ err_malloc_mac_addrs:
 err_alloc_queue_map:
 	nfb_nc_rxmac_deinit(internals);
 	nfb_nc_txmac_deinit(internals);
+	nfb_nc_eth_deinit(internals);
 	nfb_close(internals->nfb);
 
 err_nfb_open:
@@ -700,6 +772,7 @@ nfb_eth_dev_uninit(struct rte_eth_dev *dev)
 
 	nfb_nc_rxmac_deinit(internals);
 	nfb_nc_txmac_deinit(internals);
+	nfb_nc_eth_deinit(internals);
 	nfb_close(internals->nfb);
 
 	rte_free(internals->queue_map_rx);
