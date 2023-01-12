@@ -20,5 +20,6 @@ sources = files(
         'nfb_rxmode.c',
         'nfb_stats.c',
         'nfb_tx.c',
+        'nfb_queue_ndp.c',
         'mdio.c',
 )

@@ -21,7 +21,33 @@ struct ndp_tx_queue {
 	volatile uint64_t tx_pkts;  /* packets transmitted */
 	volatile uint64_t tx_bytes; /* bytes transmitted */
 	volatile uint64_t err_pkts; /* erroneous packets */
+
+	int queue_driver;
+	struct ndp_ctrl* ctrl;
+	struct rte_mbuf** mbufs;
+	const struct rte_memzone *mz_desc;
+	const struct rte_memzone *mz_update;
+
+	int queue_index;
+
+	/* native queue driver variables */
+	uint32_t fdp; /* Freed mbufs descriptor pointer (behind hdp) */
+	uint16_t nb_tx_desc;
+
+	uint8_t state;
 };
+
+uint16_t nfb_ndp_queue_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
+int nfb_ndp_tx_queue_start(struct rte_eth_dev *dev, struct ndp_tx_queue *q);
+int nfb_ndp_tx_queue_stop(struct rte_eth_dev *dev, struct ndp_tx_queue *q);
+int nfb_ndp_tx_queue_setup(struct rte_eth_dev *dev __rte_unused,
+                uint16_t tx_queue_id,
+                uint16_t nb_tx_desc,
+                unsigned int socket_id,
+                const struct rte_eth_txconf *tx_conf __rte_unused,
+                struct ndp_tx_queue *q);
+
+void nfb_ndp_tx_queue_release(struct rte_eth_dev *dev, struct ndp_tx_queue *q);
 
 /**
  * DPDK callback to setup a TX queue for use.
@@ -63,9 +89,13 @@ nfb_eth_tx_queue_setup(struct rte_eth_dev *dev,
  *   0 on success, a negative errno value otherwise.
  */
 int
-nfb_eth_tx_queue_init(struct nfb_device *nfb,
+nfb_eth_tx_queue_init(struct rte_eth_dev *dev,
 	uint16_t tx_queue_id,
+	uint16_t nb_tx_desc,
+	unsigned int socket_id,
+	const struct rte_eth_txconf *tx_conf,
 	struct ndp_tx_queue *txq);
+
 
 /**
  * DPDK callback to release a RX queue.

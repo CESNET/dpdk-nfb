@@ -39,10 +39,14 @@
 
 #define RTE_NFB_DRIVER_NAME net_nfb
 
+#define NFB_QUEUE_DRIVER_NDP_SHARED 1
+#define NFB_QUEUE_DRIVER_NATIVE 2
+
 /* Device arguments */
 #define NFB_ARG_RXHDR_DYNFIELD "rxhdr_dynfield"
+#define NFB_ARG_QUEUE_DRIVER "queue_driver"
 
-static const char * const VALID_KEYS[] = {NFB_ARG_RXHDR_DYNFIELD, NULL};
+static const char * const VALID_KEYS[] = {NFB_ARG_RXHDR_DYNFIELD, NFB_ARG_QUEUE_DRIVER, NULL};
 
 struct eth_node{
 	struct mdio_if_info if_info;
@@ -59,6 +63,8 @@ struct pmd_internals {
 	int             *queue_map_tx;
 
 	struct nfb_device *nfb;
+	int nfb_id;
+	int flags;
 };
 
 struct pmd_priv {

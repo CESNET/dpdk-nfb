@@ -23,40 +23,49 @@ int
 nfb_eth_rx_queue_start(struct rte_eth_dev *dev, uint16_t rxq_id)
 {
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[rxq_id];
-	int ret;
+	int ret = 0;
 
-	if (rxq->queue == NULL) {
-		RTE_LOG(ERR, PMD, "RX NDP queue is NULL!\n");
-		return -EINVAL;
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+		ret = nfb_ndp_rx_queue_start(dev, rxq);
+	} else {
+		if (rxq->queue == NULL) {
+			RTE_LOG(ERR, PMD, "RX NDP queue is NULL!\n");
+			return -EINVAL;
+		}
+
+		ret = ndp_queue_start(rxq->queue);
 	}
 
-	ret = ndp_queue_start(rxq->queue);
-	if (ret != 0)
-		goto err;
-	dev->data->rx_queue_state[rxq_id] = RTE_ETH_QUEUE_STATE_STARTED;
-	return 0;
+	if (ret == 0)
+		rxq->state = RTE_ETH_QUEUE_STATE_STARTED;
 
-err:
-	return -EINVAL;
+	return ret;
 }
 
 int
 nfb_eth_rx_queue_stop(struct rte_eth_dev *dev, uint16_t rxq_id)
 {
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[rxq_id];
-	int ret;
+	int ret = 0;
 
-	if (rxq->queue == NULL) {
-		RTE_LOG(ERR, PMD, "RX NDP queue is NULL!\n");
-		return -EINVAL;
+	if (rxq->state == RTE_ETH_QUEUE_STATE_STOPPED)
+		return 0;
+
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+		ret = nfb_ndp_rx_queue_stop(dev, rxq);
+	} else {
+		if (rxq->queue == NULL) {
+			RTE_LOG(ERR, PMD, "RX NDP queue is NULL!\n");
+			return -EINVAL;
+		}
+
+		ret = ndp_queue_stop(rxq->queue);
 	}
 
-	ret = ndp_queue_stop(rxq->queue);
-	if (ret != 0)
-		return -EINVAL;
+	if (ret == 0)
+		rxq->state = RTE_ETH_QUEUE_STATE_STOPPED;
 
-	dev->data->rx_queue_state[rxq_id] = RTE_ETH_QUEUE_STATE_STOPPED;
-	return 0;
+	return ret;
 }
 
 int
@@ -85,11 +94,17 @@ nfb_eth_rx_queue_setup(struct rte_eth_dev *dev,
 
 	rxq->flags = 0;
 
+	if (internals->flags & NFB_QUEUE_DRIVER_NDP_SHARED) {
+		rxq->queue_driver = NFB_QUEUE_DRIVER_NDP_SHARED;
+	} else {
+		rxq->queue_driver = NFB_QUEUE_DRIVER_NATIVE;
+	}
+
 	/* nfb queue id doesn't neccessary corresponds to txq_id */
 	nfb_qid = internals->queue_map_rx[rx_queue_id];
 
-	ret = nfb_eth_rx_queue_init(internals->nfb, nfb_qid,
-			dev->data->port_id, mb_pool, rxq);
+	ret = nfb_eth_rx_queue_init(dev, nfb_qid, nb_rx_desc, socket_id, rx_conf,
+		dev->data->port_id, mb_pool, rxq);
 	if (ret)
 		goto err_queue_init;
 
@@ -102,31 +117,41 @@ err_queue_init:
 }
 
 int
-nfb_eth_rx_queue_init(struct nfb_device *nfb,
+nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 		uint16_t rx_queue_id,
+		uint16_t nb_rx_desc,
+		unsigned int socket_id,
+		const struct rte_eth_rxconf *rx_conf,
 		uint16_t port_id,
 		struct rte_mempool *mb_pool,
 		struct ndp_rx_queue *rxq)
 {
+	int ret;
 	const struct rte_pktmbuf_pool_private *mbp_priv =
 		rte_mempool_get_priv(mb_pool);
 
 	struct nfb_fdt_packed_item pi;
 	int off;
 
-	if (nfb == NULL)
-		return -EINVAL;
+	struct pmd_internals *priv = dev->process_private;
 
-	rxq->queue = ndp_open_rx_queue(nfb, rx_queue_id);
-	if (rxq->queue == NULL)
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+		ret = nfb_ndp_rx_queue_setup(dev, rx_queue_id, nb_rx_desc, socket_id, rx_conf, mb_pool, rxq);
+		if (ret)
+			return ret;
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NDP_SHARED) {
+		rxq->queue = ndp_open_rx_queue(priv->nfb, rx_queue_id);
+		if (rxq->queue == NULL)
+			return -EINVAL;
+	} else {
 		return -EINVAL;
+	}
 
-	rxq->nfb = nfb;
+	rxq->nfb = priv->nfb;
 	rxq->rx_queue_id = rx_queue_id;
 	rxq->in_port = port_id;
 	rxq->mb_pool = mb_pool;
-	rxq->buf_size = (uint16_t)(mbp_priv->mbuf_data_room_size -
-		RTE_PKTMBUF_HEADROOM);
+	rxq->buf_size = (uint16_t)(mbp_priv->mbuf_data_room_size - RTE_PKTMBUF_HEADROOM);
 
 	rxq->rx_pkts = 0;
 	rxq->rx_bytes = 0;
@@ -156,9 +181,14 @@ nfb_eth_rx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 {
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[qid];
 
-	if (rxq->queue != NULL) {
-		ndp_close_rx_queue(rxq->queue);
-		rte_free(rxq);
-		rxq->queue = NULL;
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+		nfb_ndp_rx_queue_release(dev, rxq);
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NDP_SHARED) {
+		/* FIXME: free rxq */
+		if (rxq->queue != NULL) {
+			ndp_close_rx_queue(rxq->queue);
+			rxq->queue = NULL;
+			rte_free(rxq);
+		}
 	}
 }

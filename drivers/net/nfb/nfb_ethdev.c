@@ -749,6 +749,8 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	struct rte_ether_addr eth_addr_init;
 	struct rte_kvargs *kvlist;
 
+	const char *arg_val;
+
 	internals = (struct pmd_internals *) rte_zmalloc_socket("nfb_internals",
 			sizeof(struct pmd_internals), RTE_CACHE_LINE_SIZE,
 			dev->device->numa_node);
@@ -758,6 +760,9 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	}
 
 	dev->process_private = internals;
+	internals->flags = 0;
+
+	internals->flags = NFB_QUEUE_DRIVER_NDP_SHARED;
 
 	/* Check validity of device args */
 	if (dev->device->devargs != NULL &&
@@ -778,8 +783,16 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 			}
 		}
 
+		if ((arg_val = rte_kvargs_get(kvlist, NFB_ARG_QUEUE_DRIVER))) {
+			if (strcmp(arg_val, "native") == 0) {
+				internals->flags &= ~NFB_QUEUE_DRIVER_NDP_SHARED;
+			}
+		}
+
 		rte_kvargs_free(kvlist);
 	}
+
+	internals->nfb_id = params->nfb_id;
 
 	/* Open device handle */
 	internals->nfb = nfb_open(params->path);
@@ -794,8 +807,17 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	nfb_nc_eth_init(internals, params);
 
 	/* Set rx, tx burst functions */
-	dev->rx_pkt_burst = nfb_eth_ndp_rx;
-	dev->tx_pkt_burst = nfb_eth_ndp_tx;
+	if (internals->flags & NFB_QUEUE_DRIVER_NDP_SHARED) {
+		dev->rx_pkt_burst = nfb_eth_ndp_rx;
+		dev->tx_pkt_burst = nfb_eth_ndp_tx;
+		//RTE_LOG(ERR, PMD, "NFB: Using NDP driver for rx/tx\n");
+		printf("NFB: Using NDP driver for rx/tx\n");
+	} else {
+		dev->rx_pkt_burst = nfb_ndp_queue_rx;
+		dev->tx_pkt_burst = nfb_ndp_queue_tx;
+		//RTE_LOG(ERR, PMD, "NFB: Using Native driver for rx/tx\n");
+		printf("NFB: Using Native driver for rx/tx\n");
+	}
 
 	/* Get number of available DMA RX and TX queues */
 	priv->max_rx_queues = ifc->rxq_cnt;
@@ -1020,4 +1042,5 @@ RTE_PMD_REGISTER_PCI(RTE_NFB_DRIVER_NAME, nfb_eth_driver);
 RTE_PMD_REGISTER_PCI_TABLE(RTE_NFB_DRIVER_NAME, nfb_pci_id_table);
 RTE_PMD_REGISTER_KMOD_DEP(RTE_NFB_DRIVER_NAME, "* nfb");
 RTE_PMD_REGISTER_PARAM_STRING(RTE_NFB_DRIVER_NAME,
-		NFB_ARG_RXHDR_DYNFIELD"=<0|1>");
+		NFB_ARG_RXHDR_DYNFIELD"=<0|1> "
+		NFB_ARG_QUEUE_DRIVER"=<ndp|native>");
