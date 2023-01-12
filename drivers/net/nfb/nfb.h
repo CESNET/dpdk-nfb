@@ -36,10 +36,6 @@
 #define RTE_ETH_NDP_MAX_RX_QUEUES 32
 #define RTE_ETH_NDP_MAX_TX_QUEUES 32
 
-/* Max index of rx/tx dmas */
-#define RTE_MAX_NC_RXMAC 256
-#define RTE_MAX_NC_TXMAC 256
-
 #define RTE_NFB_DRIVER_NAME net_nfb
 
 /* Device arguments */
@@ -48,8 +44,8 @@ static const char * const VALID_KEYS[] = {NULL};
 struct pmd_internals {
 	uint16_t         max_rxmac;
 	uint16_t         max_txmac;
-	struct nc_rxmac *rxmac[RTE_MAX_NC_RXMAC];
-	struct nc_txmac *txmac[RTE_MAX_NC_TXMAC];
+	struct nc_rxmac **rxmac;
+	struct nc_txmac **txmac;
 	int             *queue_map_rx;
 	int             *queue_map_tx;
 
