@@ -4,6 +4,9 @@
  * All rights reserved.
  */
 
+#include <sys/queue.h>
+#include <rte_tailq.h>
+
 #include <nfb/nfb.h>
 #include <nfb/ndp.h>
 #include <netcope/eth.h>
@@ -23,6 +26,10 @@
 
 #include "mdio.h"
 
+
+TAILQ_HEAD(pmd_internals_head, pmd_internals);
+static struct pmd_internals_head nfb_eth_dev_list =
+                TAILQ_HEAD_INITIALIZER(nfb_eth_dev_list);
 
 static int nfb_eth_dev_uninit(struct rte_eth_dev *dev);
 
@@ -914,6 +921,8 @@ nfb_eth_dev_uninit(struct rte_eth_dev *dev)
 {
 	struct pmd_internals *internals = dev->process_private;
 
+	TAILQ_REMOVE(&nfb_eth_dev_list, internals, eth_dev_list);
+
 	nfb_nc_rxmac_deinit(internals);
 	nfb_nc_txmac_deinit(internals);
 	nfb_nc_eth_deinit(internals);
@@ -964,6 +973,8 @@ nfb_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 	struct nc_ifc_info *ifc;
 	struct nfb_device *nfb_dev;
 	struct nfb_init_params params;
+	struct rte_eth_dev *eth_dev;
+	struct pmd_internals *p;
 
 	rte_pci_device_name(&pci_dev->addr, name, sizeof(name));
 	basename_len = strlen(name);
@@ -1008,6 +1019,14 @@ nfb_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 				sizeof(struct pmd_priv),
 				eth_dev_pci_specific_init, pci_dev,
 				nfb_eth_dev_init, &params);
+
+		eth_dev = rte_eth_dev_get_by_name(name);
+		if (eth_dev) {
+			p = eth_dev->process_private;
+			p->eth_dev = eth_dev;
+			p->pci_dev = pci_dev;
+			TAILQ_INSERT_TAIL(&nfb_eth_dev_list, p, eth_dev_list);
+		}
 	}
 
 	nc_map_info_destroy(&params.map_info);
@@ -1030,6 +1049,15 @@ nfb_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 static int
 nfb_eth_pci_remove(struct rte_pci_device *pci_dev __rte_unused)
 {
+	struct pmd_internals *entry, *temp;
+
+	RTE_TAILQ_FOREACH_SAFE(entry, &nfb_eth_dev_list, eth_dev_list, temp) {
+//		if (pci_dev == RTE_ETH_DEV_TO_PCI(entry->eth_dev)) {
+		if (pci_dev == entry->pci_dev) {
+			TAILQ_REMOVE(&nfb_eth_dev_list, entry, eth_dev_list);
+			rte_eth_dev_destroy(entry->eth_dev, nfb_eth_dev_uninit);
+		}
+	}
 	return 0;
 }
 

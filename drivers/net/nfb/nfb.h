@@ -62,6 +62,10 @@ struct pmd_internals {
 	int             *queue_map_rx;
 	int             *queue_map_tx;
 
+	TAILQ_ENTRY(pmd_internals) eth_dev_list;
+	struct rte_pci_device *pci_dev;
+	struct rte_eth_dev *eth_dev;
+
 	struct nfb_device *nfb;
 	int nfb_id;
 	int flags;
