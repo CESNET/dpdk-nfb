@@ -82,6 +82,11 @@ nfb_eth_rx_queue_setup(struct rte_eth_dev *dev,
 	int nfb_qid;
 	int ret;
 
+	int nmp;
+	if (rx_conf->rx_nmempool > 0) {
+		nmp = rx_queue_id % rx_conf->rx_nmempool;
+		mb_pool = rx_conf->rx_mempools[nmp];
+	}
 	rxq = rte_zmalloc_socket("ndp rx queue",
 			sizeof(struct ndp_rx_queue),
 			RTE_CACHE_LINE_SIZE, socket_id);
