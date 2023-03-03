@@ -645,6 +645,28 @@ nfb_eth_mac_addr_remove(struct rte_eth_dev *dev, uint32_t index)
 }
 
 static int
+nfb_eth_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
+{
+	unsigned int i;
+	struct nc_rxmac_status status;
+	struct pmd_internals *internals = (struct pmd_internals *)
+		dev->process_private;
+
+	status.frame_length_max_capable = 0;
+
+	for (i = 0; i < internals->max_rxmac; ++i) {
+		nc_rxmac_read_status(internals->rxmac[i], &status);
+		break;
+	}
+	if (status.frame_length_max_capable < mtu)
+		return -EINVAL;
+
+	for (i = 0; i < internals->max_rxmac; ++i)
+		nc_rxmac_set_frame_length(internals->rxmac[i], mtu, RXMAC_FRAME_LENGTH_MAX);
+	return 0;
+}
+
+static int
 nfb_eth_fw_version_get(struct rte_eth_dev *dev, char *fw_version,
 		size_t fw_size)
 {
@@ -863,6 +885,7 @@ static const struct eth_dev_ops ops = {
 	.mac_addr_set = nfb_eth_mac_addr_set,
 	.mac_addr_add = nfb_eth_mac_addr_add,
 	.mac_addr_remove = nfb_eth_mac_addr_remove,
+	.mtu_set = nfb_eth_mtu_set,
 	.rss_hash_update = nfb_eth_rss_update,
 	.rss_hash_conf_get = nfb_eth_rss_conf_get,
 	.reta_update = nfb_eth_reta_update,
