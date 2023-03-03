@@ -20,28 +20,36 @@ nfb_eth_stats_get(struct rte_eth_dev *dev,
 	uint64_t rx_total_bytes = 0;
 	uint64_t tx_total_bytes = 0;
 
-	struct ndp_rx_queue *rx_queue = *((struct ndp_rx_queue **)
-		dev->data->rx_queues);
-	struct ndp_tx_queue *tx_queue = *((struct ndp_tx_queue **)
-		dev->data->tx_queues);
+	if (dev->data == NULL)
+		return -ENOMEM;
 
-	for (i = 0; i < nb_rx; i++) {
-		if (i < RTE_ETHDEV_QUEUE_STAT_CNTRS) {
-			stats->q_ipackets[i] = rx_queue[i].rx_pkts;
-			stats->q_ibytes[i] = rx_queue[i].rx_bytes;
+	struct ndp_rx_queue *rx_queue = NULL;
+	struct ndp_tx_queue *tx_queue = NULL;
+
+	if (dev->data->rx_queues) {
+		rx_queue = *((struct ndp_rx_queue **) dev->data->rx_queues);
+
+		for (i = 0; i < nb_rx; i++) {
+			if (i < RTE_ETHDEV_QUEUE_STAT_CNTRS) {
+				stats->q_ipackets[i] = rx_queue[i].rx_pkts;
+				stats->q_ibytes[i] = rx_queue[i].rx_bytes;
+			}
+			rx_total += rx_queue[i].rx_pkts;
+			rx_total_bytes += rx_queue[i].rx_bytes;
 		}
-		rx_total += rx_queue[i].rx_pkts;
-		rx_total_bytes += rx_queue[i].rx_bytes;
 	}
 
-	for (i = 0; i < nb_tx; i++) {
-		if (i < RTE_ETHDEV_QUEUE_STAT_CNTRS) {
-			stats->q_opackets[i] = tx_queue[i].tx_pkts;
-			stats->q_obytes[i] = tx_queue[i].tx_bytes;
+	if (dev->data->tx_queues) {
+		tx_queue = *((struct ndp_tx_queue **) dev->data->tx_queues);
+		for (i = 0; i < nb_tx; i++) {
+			if (i < RTE_ETHDEV_QUEUE_STAT_CNTRS) {
+				stats->q_opackets[i] = tx_queue[i].tx_pkts;
+				stats->q_obytes[i] = tx_queue[i].tx_bytes;
+			}
+			tx_total += tx_queue[i].tx_pkts;
+			tx_total_bytes += tx_queue[i].tx_bytes;
+			tx_err_total += tx_queue[i].err_pkts;
 		}
-		tx_total += tx_queue[i].tx_pkts;
-		tx_total_bytes += tx_queue[i].tx_bytes;
-		tx_err_total += tx_queue[i].err_pkts;
 	}
 
 	stats->ipackets = rx_total;
