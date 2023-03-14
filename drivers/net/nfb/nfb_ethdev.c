@@ -989,13 +989,11 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	if (internals->flags & NFB_QUEUE_DRIVER_NDP_SHARED) {
 		dev->rx_pkt_burst = nfb_eth_ndp_rx;
 		dev->tx_pkt_burst = nfb_eth_ndp_tx;
-		//RTE_LOG(ERR, PMD, "NFB: Using NDP driver for rx/tx\n");
-		printf("NFB: Using NDP driver for rx/tx\n");
+		RTE_LOG(INFO, PMD, "NFB: Using NDP driver for rx/tx\n");
 	} else {
 		dev->rx_pkt_burst = nfb_ndp_queue_rx;
 		dev->tx_pkt_burst = nfb_ndp_queue_tx;
-		//RTE_LOG(ERR, PMD, "NFB: Using Native driver for rx/tx\n");
-		printf("NFB: Using Native driver for rx/tx\n");
+		RTE_LOG(INFO, PMD, "NFB: Using Native driver for rx/tx\n");
 	}
 
 	/* Get number of available DMA RX and TX queues */
