@@ -164,6 +164,15 @@ nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 
 	rxq->timestamp_off = -1;
 	rxq->timestamp_vld_off = -1;
+	rxq->timestamp_nvld_off = -1;
+	rxq->flow_hash_off = -1;
+	rxq->vlan_tci_off = -1;
+	rxq->vlan_vld_off = -1;
+	rxq->vlan_stripped_off = -1;
+	rxq->l3_csum_status_off = -1;
+	rxq->l4_csum_status_off = -1;
+	rxq->ptype_off = -1;
+
 	/* FIXME: checking only header ID 0 */
 	off = ndp_header_fdt_node_offset(nfb_get_fdt(priv->nfb), 0, 0);
 	if (off >= 0 && nfb_timestamp_dynfield_offset >= 0) {
@@ -175,7 +184,48 @@ nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 		if (/*pi.offset >= 0 && */pi.width == 1) {
 			rxq->timestamp_vld_off = pi.offset / 8;
 			rxq->timestamp_vld_mask = (1 << (pi.offset % 8));
+		} else { /* alternatively, a 31-bit timestamp can be used as a non-valid flag */
+			rxq->timestamp_nvld_off = rxq->timestamp_off + 3;
 		}
+	}
+
+	pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(priv->nfb), off, "flow.hash");
+	if (pi.width == 64 && pi.offset % 8 == 0) {
+		rxq->flow_hash_off = pi.offset / 8;
+	}
+
+	pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(priv->nfb), off, "vlan.tci");
+	if (pi.width == 16 && pi.offset % 8 == 0) {
+		rxq->vlan_tci_off = pi.offset / 8;
+	}
+
+	pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(priv->nfb), off, "vlan.vld");
+	if (pi.width == 1) {
+		rxq->vlan_vld_off = pi.offset / 8;
+		rxq->vlan_vld_shift = (pi.offset % 8);
+	}
+
+	pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(priv->nfb), off, "vlan.stripped");
+	if (pi.width == 1) {
+		rxq->vlan_stripped_off = pi.offset / 8;
+		rxq->vlan_stripped_shift = (pi.offset % 8);
+	}
+
+	pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(priv->nfb), off, "l3.csum_status");
+	if (pi.width == 2) {
+		rxq->l3_csum_status_off = pi.offset / 8;
+		rxq->l3_csum_status_shift = (pi.offset % 8);
+	}
+
+	pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(priv->nfb), off, "l4.csum_status");
+	if (pi.width == 2) {
+		rxq->l4_csum_status_off = pi.offset / 8;
+		rxq->l4_csum_status_shift = (pi.offset % 8);
+	}
+
+	pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(priv->nfb), off, "l2.ptype");
+	if (pi.width == 4 && pi.offset % 8 == 0) {
+		rxq->ptype_off = pi.offset / 8;
 	}
 
 	return 0;
