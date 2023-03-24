@@ -32,6 +32,7 @@ static struct pmd_internals_head nfb_eth_dev_list =
                 TAILQ_HEAD_INITIALIZER(nfb_eth_dev_list);
 
 static int nfb_eth_dev_uninit(struct rte_eth_dev *dev);
+static int nfb_eth_rss_update(struct rte_eth_dev *dev, struct rte_eth_rss_conf *rss_conf);
 
 static int
 nfb_mdio_read(void *priv, int prtad, int devad, uint16_t addr)
@@ -218,14 +219,6 @@ nfb_eth_dev_start(struct rte_eth_dev *dev)
 	uint16_t nb_rx = dev->data->nb_rx_queues;
 	uint16_t nb_tx = dev->data->nb_tx_queues;
 
-	struct pmd_internals *priv = dev->process_private;
-
-	if (priv->comp_rss != NULL && priv->max_eth != 0 && nb_rx) {
-		for (i = 0; i < nc_nic_rss_get_reta_size(priv->comp_rss); i++) {
-			nc_nic_rss_set_reta(priv->comp_rss, priv->eth_node[0].channel_id, i, i % nb_rx);
-		}
-	}
-
 	for (i = 0; i < nb_rx; i++) {
 		ret = nfb_eth_rx_queue_start(dev, i);
 		if (ret != 0)
@@ -288,7 +281,11 @@ static int
 nfb_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	int ret;
+	int i;
 	struct rte_eth_conf *dev_conf = &dev->data->dev_conf;
+	struct pmd_internals *priv = dev->process_private;
+
+	uint16_t nb_rx = dev->data->nb_rx_queues;
 
 	static struct rte_mbuf_dynflag df_ndp_hdr_vld = {
 		.name = "rte_net_nfb_dynflag_header_vld",
@@ -336,6 +333,16 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 					" field/flag %d\n", ret);
 			ret = -rte_errno;
 			goto err_ts_register;
+		}
+	}
+
+	if (dev_conf->rxmode.mq_mode & RTE_ETH_MQ_RX_RSS_FLAG) {
+		nfb_eth_rss_update(dev, &dev_conf->rx_adv_conf.rss_conf);
+
+		if (priv->comp_rss != NULL && priv->max_eth != 0 && nb_rx) {
+			for (i = 0; i < nc_nic_rss_get_reta_size(priv->comp_rss); i++) {
+				nc_nic_rss_set_reta(priv->comp_rss, priv->eth_node[0].channel_id, i, i % nb_rx);
+			}
 		}
 	}
 
@@ -793,16 +800,19 @@ static int
 nfb_eth_rss_conf_get(struct rte_eth_dev *dev, struct rte_eth_rss_conf *rss_conf)
 {
 	int ret;
+	int hf;
 	struct pmd_internals *priv = dev->process_private;
 
 	if (priv->comp_rss == NULL || priv->max_eth == 0)
 		return -ENODEV;
 
-	ret = nc_nic_rss_get_input(priv->comp_rss, priv->eth_node[0].channel_id, &rss_conf->rss_hf);
+	ret = nc_nic_rss_get_input(priv->comp_rss, priv->eth_node[0].channel_id, &hf);
 	if (ret)
 		return ret;
 
-	if (rss_conf->rss_key) {
+	rss_conf->rss_hf = hf;
+
+	if (rss_conf->rss_key_len > 0 && rss_conf->rss_key) {
 		ret = nc_nic_rss_read_key(priv->comp_rss, priv->eth_node[0].channel_id,
 				rss_conf->rss_key, rss_conf->rss_key_len);
 		if (ret)
