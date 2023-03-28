@@ -250,16 +250,16 @@ static inline void nfb_rx_fetch_metadata(struct ndp_rx_queue *q, struct rte_mbuf
 
 	switch (NFB_DYNHDR_ITEM(header, q->l4_csum_status, 2)) {
 	case NFB_META_CKSUM_BAD:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_BAD;
+		mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_BAD;
 		break;
 	case NFB_META_CKSUM_GOOD:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_GOOD;
+		mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_GOOD;
 		break;
 	case NFB_META_CKSUM_NONE:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_NONE;
+		mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_NONE;
 		break;
 	default:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_UNKNOWN;
+		mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_UNKNOWN;
 	}
 
 	mbuf->packet_type = RTE_PTYPE_UNKNOWN;
