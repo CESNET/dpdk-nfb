@@ -51,10 +51,12 @@ struct ndp_rx_queue {
 	struct rte_mempool *mb_pool; /* memory pool to allocate packets */
 	uint16_t buf_size;           /* mbuf size */
 
-	int16_t  timestamp_off;
-	int16_t  timestamp_vld_off;
+	uint16_t timestamp_hdr_minlen;
+	uint16_t timestamp_off;
+	uint16_t timestamp_vld_off;
+	uint8_t  timestamp_vld_val;
 	uint8_t  timestamp_vld_mask;
-	int16_t  timestamp_nvld_off;
+
 	int16_t  flow_hash_off;
 	int16_t  vlan_tci_off;
 	int16_t  vlan_vld_off;
@@ -190,12 +192,9 @@ static inline void nfb_rx_fetch_timestamp(struct ndp_rx_queue *q, struct rte_mbu
 		const unsigned char *header, int header_length)
 {
 	rte_mbuf_timestamp_t timestamp;
+	rte_mbuf_timestamp_t *tp;
 
-	/* INFO: already checked in nfb_eth_rx_queue_init */
-	if (/*nfb_timestamp_dynfield_offset < 0 || */q->timestamp_off < 0)
-		return;
-
-	if (header_length < q->timestamp_off + 8)
+	if (header_length < q->timestamp_hdr_minlen)
 		return;
 
 	/* seconds */
@@ -204,14 +203,10 @@ static inline void nfb_rx_fetch_timestamp(struct ndp_rx_queue *q, struct rte_mbu
 	/* nanoseconds */
 	timestamp  += rte_le_to_cpu_32(*((const uint32_t *) (header + q->timestamp_off + 0)));
 
-	*nfb_timestamp_dynfield(mbuf) = timestamp;
-	if (header_length > (q->timestamp_vld_off) && header[q->timestamp_vld_off] & q->timestamp_vld_mask) {
-		mbuf->ol_flags |= nfb_timestamp_rx_dynflag;
-		return;
-	}
+	tp = nfb_timestamp_dynfield(mbuf);
+	*tp = timestamp;
 
-	/* alternatively can be used a TS non-valid flag */
-	if (header_length > (q->timestamp_nvld_off) && ~header[q->timestamp_nvld_off] & (1 << 7))
+	if ((header[q->timestamp_vld_off] & q->timestamp_vld_mask) == q->timestamp_vld_val)
 		mbuf->ol_flags |= nfb_timestamp_rx_dynflag;
 }
 

@@ -164,7 +164,10 @@ nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 
 	rxq->timestamp_off = -1;
 	rxq->timestamp_vld_off = -1;
-	rxq->timestamp_nvld_off = -1;
+	rxq->timestamp_vld_val = 1;
+	rxq->timestamp_vld_mask = 0;
+	rxq->timestamp_hdr_minlen = -1;
+
 	rxq->flow_hash_off = -1;
 	rxq->vlan_tci_off = -1;
 	rxq->vlan_vld_off = -1;
@@ -184,9 +187,16 @@ nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 		if (/*pi.offset >= 0 && */pi.width == 1) {
 			rxq->timestamp_vld_off = pi.offset / 8;
 			rxq->timestamp_vld_mask = (1 << (pi.offset % 8));
-		} else { /* alternatively, a 31-bit timestamp can be used as a non-valid flag */
-			rxq->timestamp_nvld_off = rxq->timestamp_off + 3;
+			rxq->timestamp_vld_val  = (1 << (pi.offset % 8));
+		} else { /* alternatively, a bit 31 of timestamp can be used as a non-valid flag */
+			rxq->timestamp_vld_val = 0;
+			rxq->timestamp_vld_off = rxq->timestamp_off + 3;
+			rxq->timestamp_vld_mask = (1 << 7);
 		}
+
+		rxq->timestamp_hdr_minlen = rxq->timestamp_off + 8;
+		if (rxq->timestamp_vld_off + 1 > rxq->timestamp_hdr_minlen)
+			rxq->timestamp_hdr_minlen = rxq->timestamp_vld_off + 1;
 	}
 
 	pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(priv->nfb), off, "flow.hash");
