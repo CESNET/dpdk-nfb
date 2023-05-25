@@ -42,12 +42,15 @@
 
 #define NFB_QUEUE_DRIVER_NDP_SHARED 1
 #define NFB_QUEUE_DRIVER_NATIVE 2
+#define NFB_RETA_INDEX_GLOBAL 4
 
 /* Device arguments */
 #define NFB_ARG_RXHDR_DYNFIELD "rxhdr_dynfield"
 #define NFB_ARG_QUEUE_DRIVER "queue_driver"
+#define NFB_ARG_RETA_INDEX_GLOBAL "reta_index_global"
 
-static const char * const VALID_KEYS[] = {NFB_ARG_RXHDR_DYNFIELD, NFB_ARG_QUEUE_DRIVER, NULL};
+static const char * const VALID_KEYS[] = {NFB_ARG_RXHDR_DYNFIELD, NFB_ARG_QUEUE_DRIVER,
+	NFB_ARG_RETA_INDEX_GLOBAL, NULL};
 
 struct eth_node{
 	int channel_id;

@@ -281,7 +281,7 @@ static int
 nfb_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	int ret;
-	int i;
+	int i, j;
 	struct rte_eth_conf *dev_conf = &dev->data->dev_conf;
 	struct pmd_internals *priv = dev->process_private;
 
@@ -338,11 +338,17 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 
 	if (dev_conf->rxmode.mq_mode & RTE_ETH_MQ_RX_RSS_FLAG) {
 		nfb_eth_rss_update(dev, &dev_conf->rx_adv_conf.rss_conf);
+	}
 
-		if (priv->comp_rss != NULL && priv->max_eth != 0 && nb_rx) {
-			for (i = 0; i < nc_nic_rss_get_reta_size(priv->comp_rss); i++) {
-				nc_nic_rss_set_reta(priv->comp_rss, priv->eth_node[0].channel_id, i, i % nb_rx);
+	if (priv->comp_rss != NULL && priv->max_eth != 0 && nb_rx) {
+		for (i = 0; i < nc_nic_rss_get_reta_size(priv->comp_rss); i++) {
+			j = (i % nb_rx);
+
+			if (!(priv->flags & NFB_RETA_INDEX_GLOBAL)) {
+				j += priv->queue_map_rx[0];
 			}
+
+			nc_nic_rss_set_reta(priv->comp_rss, priv->eth_node[0].channel_id, i, j);
 		}
 	}
 
@@ -969,6 +975,12 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 			}
 		}
 
+		if ((arg_val = rte_kvargs_get(kvlist, NFB_ARG_RETA_INDEX_GLOBAL))) {
+			if (strcmp(arg_val, "1") == 0) {
+				internals->flags |= NFB_RETA_INDEX_GLOBAL;
+			}
+		}
+
 		rte_kvargs_free(kvlist);
 	}
 
@@ -1254,4 +1266,5 @@ RTE_PMD_REGISTER_PCI_TABLE(RTE_NFB_DRIVER_NAME, nfb_pci_id_table);
 RTE_PMD_REGISTER_KMOD_DEP(RTE_NFB_DRIVER_NAME, "* nfb");
 RTE_PMD_REGISTER_PARAM_STRING(RTE_NFB_DRIVER_NAME,
 		NFB_ARG_RXHDR_DYNFIELD"=<0|1> "
+		NFB_ARG_RETA_INDEX_GLOBAL"<=0|1> "
 		NFB_ARG_QUEUE_DRIVER"=<ndp|native>");
