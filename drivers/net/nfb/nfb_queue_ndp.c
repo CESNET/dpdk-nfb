@@ -506,7 +506,8 @@ int nfb_ndp_rx_queue_setup(struct rte_eth_dev *dev,
 	if (ret)
 		goto err_ctrl_open;
 
-	if (nc_ndp_ctrl_get_mtu(&q->ctrl->c, &q->ctrl->tu_min, &q->ctrl->tu_max))
+	ret = nc_ndp_ctrl_get_mtu(&q->ctrl->c, &q->ctrl->tu_min, &q->ctrl->tu_max);
+	if (ret)
 		goto err_ctrl_get_mtu;
 
 	return 0;
@@ -585,7 +586,7 @@ int nfb_ndp_tx_queue_stop(struct rte_eth_dev *dev __rte_unused, struct ndp_tx_qu
 	int cnt = 0;
 	do {
 		ret = nc_ndp_ctrl_stop(&q->ctrl->c);
-		if (ret != -EAGAIN)
+		if (ret != -EAGAIN && ret != -EINPROGRESS)
 			break;
 		rte_delay_ms(10);
 	} while (cnt++ < 100);
@@ -644,8 +645,9 @@ int nfb_ndp_tx_queue_setup(struct rte_eth_dev *dev,
 	ret = nc_ndp_ctrl_open(priv->nfb, fdt_offset, &q->ctrl->c);
 	if (ret)
 		goto err_ctrl_open;
-
-	if (nc_ndp_ctrl_get_mtu(&q->ctrl->c, &q->ctrl->tu_min, &q->ctrl->tu_max))
+		
+	ret = nc_ndp_ctrl_get_mtu(&q->ctrl->c, &q->ctrl->tu_min, &q->ctrl->tu_max);
+	if (ret)
 		goto err_ctrl_get_mtu;
 
 	return 0;
