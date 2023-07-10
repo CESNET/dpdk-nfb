@@ -585,7 +585,7 @@ int nfb_ndp_tx_queue_stop(struct rte_eth_dev *dev __rte_unused, struct ndp_tx_qu
 	int cnt = 0;
 	do {
 		ret = nc_ndp_ctrl_stop(&q->ctrl->c);
-		if (ret != -EAGAIN)
+		if (ret != -EAGAIN && ret != -EINPROGRESS)
 			break;
 		rte_delay_ms(10);
 	} while (cnt++ < 100);
