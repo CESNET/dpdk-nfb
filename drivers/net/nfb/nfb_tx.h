@@ -35,6 +35,8 @@ struct ndp_tx_queue {
 	uint16_t nb_tx_desc;
 
 	uint8_t state;
+
+	bool deferred_start;
 };
 
 uint16_t nfb_ndp_queue_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);

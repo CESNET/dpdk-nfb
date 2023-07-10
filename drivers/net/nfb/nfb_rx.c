@@ -176,6 +176,8 @@ nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 	rxq->l4_csum_status_off = -1;
 	rxq->ptype_off = -1;
 
+	rxq->deferred_start = rx_conf->rx_deferred_start;
+
 	/* FIXME: checking only header ID 0 */
 	off = ndp_header_fdt_node_offset(nfb_get_fdt(priv->nfb), 0, 0);
 	if (off >= 0 && nfb_timestamp_dynfield_offset >= 0) {

@@ -126,6 +126,8 @@ nfb_eth_tx_queue_init(struct rte_eth_dev *dev, uint16_t tx_queue_id,
 	txq->tx_bytes = 0;
 	txq->err_pkts = 0;
 
+	txq->deferred_start = tx_conf->tx_deferred_start;
+
 	return 0;
 }
 
