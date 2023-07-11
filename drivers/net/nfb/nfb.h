@@ -81,6 +81,8 @@ struct pmd_internals {
 struct pmd_priv {
 	int max_rx_queues;
 	int max_tx_queues;
+
+	int total_rx_queues;
 };
 
 struct nfb_init_params {

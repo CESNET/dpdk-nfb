@@ -281,9 +281,10 @@ static int
 nfb_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	int ret;
-	int i, j;
+	int i, j, k;
 	struct rte_eth_conf *dev_conf = &dev->data->dev_conf;
 	struct pmd_internals *priv = dev->process_private;
+	struct pmd_priv *ppriv = dev->data->dev_private;
 
 	uint16_t nb_rx = dev->data->nb_rx_queues;
 
@@ -342,9 +343,12 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 
 	if (priv->comp_rss != NULL && priv->max_eth != 0 && nb_rx) {
 		for (i = 0; i < nc_nic_rss_get_reta_size(priv->comp_rss); i++) {
-			j = (i % nb_rx);
-
-			if (!(priv->flags & NFB_RETA_INDEX_GLOBAL)) {
+			if (priv->flags & NFB_RETA_INDEX_GLOBAL) {
+				k = (i * ppriv->max_rx_queues);
+				j = k % ppriv->total_rx_queues;
+				j += (k / ppriv->total_rx_queues) % nb_rx;
+			} else {
+				j = (i % nb_rx);
 				j += priv->queue_map_rx[0];
 			}
 
@@ -1022,6 +1026,8 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	priv->max_rx_queues = ifc->rxq_cnt;
 	priv->max_tx_queues = ifc->txq_cnt;
 
+	priv->total_rx_queues = mi->rxq_cnt;
+
 	internals->queue_map_rx = rte_malloc("NFB queue map",
 			sizeof(*internals->queue_map_rx) *
 			(priv->max_rx_queues + priv->max_tx_queues), 0);
@@ -1137,6 +1143,7 @@ static const struct rte_pci_id nfb_pci_id_table[] = {
 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_SILICOM, PCI_DEVICE_ID_FB2CGHH) },
 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_SILICOM, PCI_DEVICE_ID_FB2CGG3D) },
 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CESNET,  PCI_DEVICE_ID_COMBO400G1) },
+	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CESNET,  0xC000) },
 	{ .vendor_id = 0, }
 };
 
