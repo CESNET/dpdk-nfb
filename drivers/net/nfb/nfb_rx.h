@@ -85,6 +85,8 @@ struct ndp_rx_queue {
 
 	uint16_t nb_rx_desc;
 	uint16_t nb_rx_hdr;
+
+	bool deferred_start;
 };
 
 
