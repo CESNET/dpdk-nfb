@@ -1220,7 +1220,7 @@ nfb_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 			continue;
 
 		snprintf(name + basename_len, sizeof(name) - basename_len,
-				"_nfb%d_eth%d", comp_dev_info.nfb_id, params.ifc_info->id);
+				"_eth%d", params.ifc_info->id);
 
 		ret = rte_eth_dev_create(&pci_dev->device, name,
 				sizeof(struct pmd_priv),
