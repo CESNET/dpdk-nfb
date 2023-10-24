@@ -118,16 +118,6 @@ nfb_ndp_queue_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		num_bytes += mbuf->pkt_len;
 		bufs[i] = mbuf;
 		shp = (shp + 1) & mhp;
-#if 0
-		int j;
-		for (j = 0; j < mbuf->data_len * 0; j++) {
-			printf("%02x", *(rte_pktmbuf_mtod(mbuf, char*) + j));
-			if (j % 4 == 3)
-				printf(" ");
-			if (j % 32 == 31)
-				printf("\n");
-		}
-#endif
 	}
 
 	q->rx_pkts += nb_rx;
