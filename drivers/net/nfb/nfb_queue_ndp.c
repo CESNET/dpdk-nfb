@@ -68,6 +68,9 @@ nfb_ndp_queue_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	uint16_t *hdr_len;
 	uint16_t *flags;
 
+	struct ndp_rx_offload_parser * ofp;
+	uint8_t hdr_id;
+
 	nc_ndp_ctrl_hhp_update(&ctrl->c);
 	count = (ctrl->c.hhp - shp) & mhp;
 	if (nb_pkts < count)
@@ -101,7 +104,15 @@ nfb_ndp_queue_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 			mbuf->ol_flags |= nfb_ndp_df_header_vld;
 		}
 
-		nfb_rx_fetch_timestamp(q, mbuf, rte_pktmbuf_mtod(mbuf, unsigned char*), hdr->hdr_len);
+		hdr_id = hdr->meta & 0x03;
+		if (hdr_id < NDP_RXHDR_CNT) {
+			ofp = &q->ofp[hdr_id];
+			if (hdr->hdr_len >= ofp->hdr_minlen) {
+				nfb_rx_fetch_timestamp(ofp, mbuf, rte_pktmbuf_mtod(mbuf, unsigned char*));
+				nfb_rx_fetch_metadata(ofp, mbuf, rte_pktmbuf_mtod(mbuf, unsigned char*));
+			}
+		}
+
 		rte_pktmbuf_adj(mbuf, hdr->hdr_len);
 
 		num_bytes += mbuf->pkt_len;

@@ -41,19 +41,11 @@ nfb_timestamp_dynfield(struct rte_mbuf *mbuf)
 
 struct ndp_ctrl;
 
-struct ndp_rx_queue {
-	struct nfb_device *nfb;	     /* nfb dev structure */
-	struct ndp_queue *queue;     /* rx queue */
-	uint16_t rx_queue_id;	     /* index */
-	uint8_t in_port;	     /* port */
-	uint8_t flags;               /* setup flags */
+struct ndp_rx_offload_parser {
+	uint16_t hdr_minlen;
 
-	struct rte_mempool *mb_pool; /* memory pool to allocate packets */
-	uint16_t buf_size;           /* mbuf size */
-
-	uint16_t timestamp_hdr_minlen;
-	uint16_t timestamp_off;
-	uint16_t timestamp_vld_off;
+	int16_t  timestamp_off;
+	int16_t  timestamp_vld_off;
 	uint8_t  timestamp_vld_val;
 	uint8_t  timestamp_vld_mask;
 
@@ -68,6 +60,19 @@ struct ndp_rx_queue {
 	int16_t  l4_csum_status_off;
 	uint8_t  l4_csum_status_shift;
 	int16_t  ptype_off;
+};
+
+#define NDP_RXHDR_CNT 4
+
+struct ndp_rx_queue {
+	struct nfb_device *nfb;	     /* nfb dev structure */
+	struct ndp_queue *queue;     /* rx queue */
+	uint16_t rx_queue_id;	     /* index */
+	uint8_t in_port;	     /* port */
+	uint8_t flags;               /* setup flags */
+
+	struct rte_mempool *mb_pool; /* memory pool to allocate packets */
+	uint16_t buf_size;           /* mbuf size */
 
 	volatile uint64_t rx_pkts;   /* packets read */
 	volatile uint64_t rx_bytes;  /* bytes read */
@@ -87,6 +92,8 @@ struct ndp_rx_queue {
 	uint16_t nb_rx_hdr;
 
 	bool deferred_start;
+
+	struct ndp_rx_offload_parser ofp[NDP_RXHDR_CNT];
 };
 
 
@@ -190,13 +197,13 @@ nfb_eth_rx_queue_start(struct rte_eth_dev *dev, uint16_t rxq_id);
 int
 nfb_eth_rx_queue_stop(struct rte_eth_dev *dev, uint16_t rxq_id);
 
-static inline void nfb_rx_fetch_timestamp(struct ndp_rx_queue *q, struct rte_mbuf *mbuf,
-		const unsigned char *header, int header_length)
+static inline void nfb_rx_fetch_timestamp(struct ndp_rx_offload_parser *q, struct rte_mbuf *mbuf,
+		const unsigned char *header)
 {
 	rte_mbuf_timestamp_t timestamp;
 	rte_mbuf_timestamp_t *tp;
 
-	if (header_length < q->timestamp_hdr_minlen)
+	if (q->timestamp_vld_off == -1)
 		return;
 
 	/* seconds */
@@ -212,55 +219,61 @@ static inline void nfb_rx_fetch_timestamp(struct ndp_rx_queue *q, struct rte_mbu
 		mbuf->ol_flags |= nfb_timestamp_rx_dynflag;
 }
 
-static inline void nfb_rx_fetch_metadata(struct ndp_rx_queue *q, struct rte_mbuf *mbuf,
-		const unsigned char *header, int header_length)
+static inline void nfb_rx_fetch_metadata(struct ndp_rx_offload_parser *q, struct rte_mbuf *mbuf,
+		const unsigned char *header)
 {
-
-	/* FIXME: currently, only parsing of a specific header is supported */
-	if (header_length != 32 && header_length < q->ptype_off)
-		return;
-
-	mbuf->hash.rss = rte_le_to_cpu_32(*((const uint32_t *) (header + q->flow_hash_off)));
-	mbuf->ol_flags |= RTE_MBUF_F_RX_RSS_HASH;
-
-	if (NFB_DYNHDR_ITEM(header, q->vlan_vld, 1))
-		mbuf->ol_flags |= RTE_MBUF_F_RX_VLAN;
-
-	mbuf->vlan_tci = rte_le_to_cpu_16(*((const uint16_t *) (header + q->vlan_tci_off)));
-
-	if (NFB_DYNHDR_ITEM(header, q->vlan_stripped, 1))
-		mbuf->ol_flags |= RTE_MBUF_F_RX_VLAN_STRIPPED;
-
-	switch (NFB_DYNHDR_ITEM(header, q->l3_csum_status, 2)) {
-	case NFB_META_CKSUM_BAD:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_BAD;
-		break;
-	case NFB_META_CKSUM_GOOD:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_GOOD;
-		break;
-	case NFB_META_CKSUM_NONE:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_NONE;
-		break;
-	default:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_UNKNOWN;
+	if (q->flow_hash_off != -1) {
+		mbuf->hash.rss = rte_le_to_cpu_32(*((const uint32_t *) (header + q->flow_hash_off)));
+		mbuf->ol_flags |= RTE_MBUF_F_RX_RSS_HASH;
 	}
 
-	switch (NFB_DYNHDR_ITEM(header, q->l4_csum_status, 2)) {
-	case NFB_META_CKSUM_BAD:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_BAD;
-		break;
-	case NFB_META_CKSUM_GOOD:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_GOOD;
-		break;
-	case NFB_META_CKSUM_NONE:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_NONE;
-		break;
-	default:
-		mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_UNKNOWN;
+	if (q->vlan_vld_off != -1 && NFB_DYNHDR_ITEM(header, q->vlan_vld, 1)) {
+		mbuf->vlan_tci = rte_le_to_cpu_16(*((const uint16_t *) (header + q->vlan_tci_off)));
+		mbuf->ol_flags |= RTE_MBUF_F_RX_VLAN;
+	}
+
+	if (q->vlan_stripped_off != -1 && NFB_DYNHDR_ITEM(header, q->vlan_stripped, 1))
+		mbuf->ol_flags |= RTE_MBUF_F_RX_VLAN_STRIPPED;
+
+
+	if (q->l3_csum_status_off != -1) {
+		switch (NFB_DYNHDR_ITEM(header, q->l3_csum_status, 2)) {
+		case NFB_META_CKSUM_BAD:
+			mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_BAD;
+			break;
+		case NFB_META_CKSUM_GOOD:
+			mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_GOOD;
+			break;
+		case NFB_META_CKSUM_NONE:
+			mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_NONE;
+			break;
+		default:
+			mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_UNKNOWN;
+		}
+	}
+
+	if (q->l4_csum_status_off != -1) {
+		switch (NFB_DYNHDR_ITEM(header, q->l4_csum_status, 2)) {
+		case NFB_META_CKSUM_BAD:
+			mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_BAD;
+			break;
+		case NFB_META_CKSUM_GOOD:
+			mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_GOOD;
+			break;
+		case NFB_META_CKSUM_NONE:
+			mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_NONE;
+			break;
+		default:
+			mbuf->ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_UNKNOWN;
+		}
 	}
 
 	mbuf->packet_type = RTE_PTYPE_UNKNOWN;
-	mbuf->packet_type |= (RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK | RTE_PTYPE_L4_MASK) & rte_le_to_cpu_32(*((const uint32_t *) (header + q->ptype_off)));
+	if (q->ptype_off != -1) {
+		mbuf->packet_type |=
+				(RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK | RTE_PTYPE_L4_MASK) &
+				rte_le_to_cpu_32(*((const uint32_t *) (header + q->ptype_off)));
+	}
 }
 
 /**
@@ -299,6 +312,9 @@ nfb_eth_ndp_rx(void *queue,
 	uint16_t *df_hdr_off;
 	uint16_t *df_hdr_len;
 	uint16_t *flags;
+
+	struct ndp_rx_offload_parser * ofp;
+	uint8_t hdr_id;
 
 	if (unlikely(ndp->queue == NULL || nb_pkts == 0)) {
 		RTE_LOG(ERR, PMD, "RX invalid arguments!\n");
@@ -357,8 +373,14 @@ nfb_eth_ndp_rx(void *queue,
 			rte_pktmbuf_adj(mbuf, hdr_len);
 			rte_memcpy(rte_pktmbuf_mtod(mbuf, void *), packets[i].data, data_len);
 
-			nfb_rx_fetch_timestamp(ndp, mbuf, packets[i].header, packets[i].header_length);
-			nfb_rx_fetch_metadata(ndp, mbuf, packets[i].header, packets[i].header_length);
+			hdr_id = ndp_packet_flag_header_id_get(&packets[i]);
+			if (hdr_id < NDP_RXHDR_CNT) {
+				ofp = &ndp->ofp[hdr_id];
+				if (hdr_len >= ofp->hdr_minlen) {
+					nfb_rx_fetch_timestamp(ofp, mbuf, packets[i].header);
+					nfb_rx_fetch_metadata(ofp, mbuf, packets[i].header);
+				}
+			}
 
 			bufs[num_rx++] = mbuf;
 			num_bytes += packet_size;
