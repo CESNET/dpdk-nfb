@@ -79,8 +79,11 @@ nfb_ndp_queue_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	nb_rx = count;
 
 	if (!nb_rx) {
-		while (nfb_ndp_ctrl_fill_rx_descs(q));
-		nc_ndp_ctrl_sdp_flush(&ctrl->c);
+		i = 0;
+		while (nfb_ndp_ctrl_fill_rx_descs(q))
+			i = 1;
+		if (i)
+			nc_ndp_ctrl_sdp_flush(&ctrl->c);
 		return 0;
 	}
 
@@ -646,7 +649,7 @@ int nfb_ndp_tx_queue_setup(struct rte_eth_dev *dev,
 	ret = nc_ndp_ctrl_open(priv->nfb, fdt_offset, &q->ctrl->c);
 	if (ret)
 		goto err_ctrl_open;
-		
+
 	ret = nc_ndp_ctrl_get_mtu(&q->ctrl->c, &q->ctrl->tu_min, &q->ctrl->tu_max);
 	if (ret)
 		goto err_ctrl_get_mtu;
