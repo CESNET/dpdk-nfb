@@ -687,6 +687,8 @@ nfb_eth_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 
 	status.frame_length_max_capable = 0;
 
+	mtu += RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN;
+
 	for (i = 0; i < internals->max_rxmac; ++i) {
 		nc_rxmac_read_status(internals->rxmac[i], &status);
 		break;
