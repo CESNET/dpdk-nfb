@@ -33,6 +33,7 @@ static struct pmd_internals_head nfb_eth_dev_list =
 
 static int nfb_eth_dev_uninit(struct rte_eth_dev *dev);
 static int nfb_eth_rss_update(struct rte_eth_dev *dev, struct rte_eth_rss_conf *rss_conf);
+static int nfb_eth_mtu_set(struct rte_eth_dev *dev, uint16_t mtu);
 
 static int
 nfb_mdio_read(void *priv, int prtad, int devad, uint16_t addr)
@@ -316,6 +317,11 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 		.size = 2,
 	};
 
+	ret = nfb_eth_mtu_set(dev, dev_conf->rxmode.mtu);
+	if (ret) {
+		goto err_mtu_set;
+	}
+
 	if (nfb_ndp_df_header_enable) {
 		ret = rte_mbuf_dynflag_register(&df_ndp_hdr_vld);
 		nfb_ndp_df_header_vld = RTE_BIT64(ret);
@@ -366,6 +372,7 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 
 err_ts_register:
 err_hdr_register:
+err_mtu_set:
 	nfb_eth_dev_uninit(dev);
 	return ret;
 }
