@@ -332,7 +332,10 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 		if (ret == -1 || nfb_ndp_df_header_offset == -1 ||
 				nfb_ndp_df_header_length == -1 ||
 				nfb_ndp_df_flags == -1) {
-			ret = -rte_errno;
+			RTE_LOG(ERR, PMD, "Cannot register header"
+					" field/flag %d\n", ret);
+
+			ret = -ENOMEM;
 			goto err_hdr_register;
 		}
 	}
@@ -344,7 +347,7 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 		if (ret != 0) {
 			RTE_LOG(ERR, PMD, "Cannot register Rx timestamp"
 					" field/flag %d\n", ret);
-			ret = -rte_errno;
+			ret = -ENOMEM;
 			goto err_ts_register;
 		}
 	}
