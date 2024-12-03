@@ -1150,6 +1150,60 @@ nfb_eth_dev_uninit(struct rte_eth_dev *dev)
 	return 0;
 }
 
+int
+nfb_eth_common_probe(struct rte_device *device,
+		ethdev_bus_specific_init specific_init, void *specific_device,
+		struct nfb_init_params *params, int ep_index)
+{
+	int i;
+	int ret;
+	int basename_len;
+
+	struct nc_ifc_info *ifc;
+	struct nfb_device *nfb_dev;
+	struct rte_eth_dev *eth_dev;
+	struct pmd_internals *p;
+
+	basename_len = strlen(params->name);
+
+	nfb_dev = nfb_open(params->path);
+	if (nfb_dev == NULL) {
+		RTE_LOG(ERR, PMD, "nfb_open(): failed to open %s\n", params->path);
+		return -EINVAL;
+	}
+
+	nc_ifc_map_info_create_ordinary(nfb_dev, &params->map_info);
+
+	for (i = 0; i < params->map_info.ifc_cnt; i++) {
+		ifc = params->ifc_info = &params->map_info.ifc[i];
+
+		/* Skip interfaces which doesn't belong to this PCI device */
+		if ((ep_index != -1 && ifc->ep != ep_index) ||
+				(ifc->flags & NC_IFC_INFO_FLAG_ACTIVE) == 0)
+			continue;
+
+		snprintf(params->name + basename_len, sizeof(params->name) - basename_len,
+				"_eth%d", params->ifc_info->id);
+
+		ret = rte_eth_dev_create(device, params->name,
+				sizeof(struct pmd_priv),
+				specific_init, specific_device,
+				nfb_eth_dev_init, params);
+
+		if (ret == 0) {
+			eth_dev = rte_eth_dev_get_by_name(params->name);
+			p = eth_dev->process_private;
+			p->eth_dev = eth_dev;
+			TAILQ_INSERT_TAIL(&nfb_eth_dev_list, p, eth_dev_list);
+		}
+	}
+
+	nc_map_info_destroy(&params->map_info);
+	nfb_close(nfb_dev);
+
+	return 0;
+}
+
 static const struct rte_pci_id nfb_pci_id_table[] = {
 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_NETCOPE, PCI_DEVICE_ID_NFB_40G2) },
 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_NETCOPE, PCI_DEVICE_ID_NFB_100G2) },
@@ -1180,76 +1234,44 @@ static int
 nfb_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 		struct rte_pci_device *pci_dev)
 {
-	int i;
 	int ret;
-	int basename_len;
-	char name[RTE_ETH_NAME_MAX_LEN];
 	char path[PATH_MAX];
 
 	struct nc_composed_device_info comp_dev_info;
-	struct nc_ifc_info *ifc;
-	struct nfb_device *nfb_dev;
-	struct nfb_init_params params;
-	struct rte_eth_dev *eth_dev;
-	struct pmd_internals *p;
+	struct nfb_init_params params = {0};
 
-	rte_pci_device_name(&pci_dev->addr, name, sizeof(name));
-	basename_len = strlen(name);
+	rte_pci_device_name(&pci_dev->addr, params.name, sizeof(params.name));
 
 	/* NFB device can be composed from multiple PCI devices,
 	 * find the base char device ID for the current PCI device */
-	ret = nc_get_composed_device_info_by_pci(NULL, name, &comp_dev_info);
+	ret = nc_get_composed_device_info_by_pci(NULL, params.name, &comp_dev_info);
 	if (ret) {
-		RTE_LOG(ERR, PMD, "Could not find NFB device for %s\n", name);
+		RTE_LOG(ERR, PMD, "Could not find NFB device for %s\n", params.name);
 		return -ENODEV;
 	}
 
 	ret = snprintf(path, sizeof(path), NFB_BASE_DEV_PATH "%d", comp_dev_info.nfb_id);
 	RTE_ASSERT(ret > 0 && ret < sizeof(path));
 
-	nfb_dev = nfb_open(path);
-	if (nfb_dev == NULL) {
-		RTE_LOG(ERR, PMD, "nfb_open(): failed to open %s", path);
-		return -EINVAL;
-	}
-
 	params.args = pci_dev->device.devargs ? pci_dev->device.devargs->args : NULL;
 	params.path = path;
-
-	ret = nc_ifc_map_info_create_ordinary(nfb_dev, &params.map_info);
-	if (ret) {
-		/* TODO: create old-style mapping */
-	}
-
 	params.nfb_id = comp_dev_info.nfb_id;
-	for (i = 0; i < params.map_info.ifc_cnt; i++) {
-		ifc = params.ifc_info = &params.map_info.ifc[i];
 
-		/* Skip interfaces which doesn't belong to this PCI device */
-		if (ifc->ep != comp_dev_info.ep_index ||
-				(ifc->flags & NC_IFC_INFO_FLAG_ACTIVE) == 0)
-			continue;
+	return nfb_eth_common_probe(&pci_dev->device, eth_dev_pci_specific_init, pci_dev, &params,
+			comp_dev_info.ep_index);
+}
 
-		snprintf(name + basename_len, sizeof(name) - basename_len,
-				"_eth%d", params.ifc_info->id);
+int
+nfb_eth_common_remove(struct rte_device *dev)
+{
+	struct pmd_internals *entry, *temp;
 
-		ret = rte_eth_dev_create(&pci_dev->device, name,
-				sizeof(struct pmd_priv),
-				eth_dev_pci_specific_init, pci_dev,
-				nfb_eth_dev_init, &params);
-
-		eth_dev = rte_eth_dev_get_by_name(name);
-		if (eth_dev) {
-			p = eth_dev->process_private;
-			p->eth_dev = eth_dev;
-			p->pci_dev = pci_dev;
-			TAILQ_INSERT_TAIL(&nfb_eth_dev_list, p, eth_dev_list);
+	RTE_TAILQ_FOREACH_SAFE(entry, &nfb_eth_dev_list, eth_dev_list, temp) {
+		if (dev == entry->eth_dev->device) {
+			TAILQ_REMOVE(&nfb_eth_dev_list, entry, eth_dev_list);
+			rte_eth_dev_destroy(entry->eth_dev, nfb_eth_dev_uninit);
 		}
 	}
-
-	nc_map_info_destroy(&params.map_info);
-	nfb_close(nfb_dev);
-
 	return 0;
 }
 
@@ -1265,18 +1287,9 @@ nfb_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
  *   0 on success, the function cannot fail.
  */
 static int
-nfb_eth_pci_remove(struct rte_pci_device *pci_dev __rte_unused)
+nfb_eth_pci_remove(struct rte_pci_device *pci_dev)
 {
-	struct pmd_internals *entry, *temp;
-
-	RTE_TAILQ_FOREACH_SAFE(entry, &nfb_eth_dev_list, eth_dev_list, temp) {
-//		if (pci_dev == RTE_ETH_DEV_TO_PCI(entry->eth_dev)) {
-		if (pci_dev == entry->pci_dev) {
-			TAILQ_REMOVE(&nfb_eth_dev_list, entry, eth_dev_list);
-			rte_eth_dev_destroy(entry->eth_dev, nfb_eth_dev_uninit);
-		}
-	}
-	return 0;
+	return nfb_eth_common_remove(&pci_dev->device);
 }
 
 static struct rte_pci_driver nfb_eth_driver = {

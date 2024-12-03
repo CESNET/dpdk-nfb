@@ -68,7 +68,6 @@ struct pmd_internals {
 	int             *queue_map_tx;
 
 	TAILQ_ENTRY(pmd_internals) eth_dev_list;
-	struct rte_pci_device *pci_dev;
 	struct rte_eth_dev *eth_dev;
 
 	struct nfb_device *nfb;
@@ -92,5 +91,15 @@ struct nfb_init_params {
 
 	struct nc_ifc_map_info map_info;
 	struct nc_ifc_info *ifc_info;
+
+	char name[RTE_DEV_NAME_MAX_LEN];
 };
+
+
+int
+nfb_eth_common_probe(struct rte_device *device,
+		ethdev_bus_specific_init specific_init, void *specific_device,
+		struct nfb_init_params *params, int ep_index);
+int nfb_eth_common_remove(struct rte_device *dev);
+
 #endif /* _NFB_H_ */
