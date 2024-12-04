@@ -973,14 +973,12 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	internals->flags = NFB_QUEUE_DRIVER_NDP_SHARED;
 
 	/* Check validity of device args */
-	if (dev->device->devargs != NULL &&
-			dev->device->devargs->args != NULL &&
-			strlen(dev->device->devargs->args) > 0) {
-		kvlist = rte_kvargs_parse(dev->device->devargs->args,
-						VALID_KEYS);
+	if (params->args != NULL && strlen(params->args) > 0) {
+		kvlist = rte_kvargs_parse(params->args, VALID_KEYS);
+
 		if (kvlist == NULL) {
-			RTE_LOG(ERR, PMD, "Failed to parse device arguments %s",
-				dev->device->devargs->args);
+			RTE_LOG(ERR, PMD, "Failed to parse device arguments %s\n",
+				params->args);
 			ret = -EINVAL;
 			goto err_devargs_inval;
 		}
@@ -1215,6 +1213,7 @@ nfb_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 		return -EINVAL;
 	}
 
+	params.args = pci_dev->device.devargs ? pci_dev->device.devargs->args : NULL;
 	params.path = path;
 
 	ret = nc_ifc_map_info_create_ordinary(nfb_dev, &params.map_info);

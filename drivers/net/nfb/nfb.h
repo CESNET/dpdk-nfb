@@ -87,6 +87,7 @@ struct pmd_priv {
 
 struct nfb_init_params {
 	const char *path;
+	const char *args;
 	int nfb_id;
 
 	struct nc_ifc_map_info map_info;
