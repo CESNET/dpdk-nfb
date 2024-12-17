@@ -398,7 +398,7 @@ int nfb_ndp_rx_queue_start(struct rte_eth_dev *dev __rte_unused, struct ndp_rx_q
 {
 	int ret;
 
-	struct nc_ndp_ctrl_start_params sp;
+	struct nc_ndp_ctrl_start_params sp = {0};
 	struct ndp_ctrl *ctrl = q->ctrl;
 
 	sp.update_buffer_virt  = q->mz_update->addr;
@@ -548,7 +548,7 @@ int
 nfb_ndp_tx_queue_start(struct rte_eth_dev *dev __rte_unused, struct ndp_tx_queue *q)
 {
 	int ret;
-	struct nc_ndp_ctrl_start_params sp;
+	struct nc_ndp_ctrl_start_params sp = {0};
 	struct ndp_ctrl *ctrl = q->ctrl;
 
 	sp.update_buffer_virt  = q->mz_update->addr;
