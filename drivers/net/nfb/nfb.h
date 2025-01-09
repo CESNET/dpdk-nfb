@@ -49,6 +49,11 @@
 #define NFB_ARG_QUEUE_DRIVER "queue_driver"
 #define NFB_ARG_RETA_INDEX_GLOBAL "reta_index_global"
 
+#define NFB_COMMON_ARGS \
+	NFB_ARG_RXHDR_DYNFIELD"=<0|1> " \
+	NFB_ARG_RETA_INDEX_GLOBAL"<=0|1> " \
+	NFB_ARG_QUEUE_DRIVER"=<ndp|native>"
+
 static const char * const VALID_KEYS[] = {NFB_ARG_RXHDR_DYNFIELD, NFB_ARG_QUEUE_DRIVER,
 	NFB_ARG_RETA_INDEX_GLOBAL, NULL};
 
