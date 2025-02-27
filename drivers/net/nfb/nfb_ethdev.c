@@ -429,6 +429,11 @@ nfb_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->rx_offload_capa =
 		RTE_ETH_RX_OFFLOAD_TIMESTAMP;
 
+	if ((internals->flags & NFB_QUEUE_DRIVER_NDP_SHARED) == 0) {
+		nfb_ndp_queue_get_desc_lim(dev, 0, &dev_info->rx_desc_lim);
+		nfb_ndp_queue_get_desc_lim(dev, 1, &dev_info->tx_desc_lim);
+	}
+
 	if (internals->max_eth) {
 		nfb_ieee802_3_pma_pmd_get_speed_capa(&internals->eth_node[0].if_info,
 				&dev_info->speed_capa);

@@ -680,3 +680,26 @@ nfb_ndp_tx_queue_release(struct rte_eth_dev *dev __rte_unused, struct ndp_tx_que
 	rte_memzone_free(q->mz_desc);
 	rte_memzone_free(q->mz_update);
 }
+
+int
+nfb_ndp_queue_get_desc_lim(struct rte_eth_dev *dev, int dir, struct rte_eth_desc_lim * dl)
+{
+	int ret;
+	struct nc_ndp_ctrl ctrl;
+	int fdt_offset;
+	struct pmd_internals *priv = dev->process_private;
+	uint32_t max_dp_mask, max_hp_mask;
+
+	fdt_offset = nfb_comp_find(priv->nfb,
+			dir == 0 ? COMP_NC_DMA_CTRL_NDP_RX : COMP_NC_DMA_CTRL_NDP_TX, 0);
+	ret = nc_ndp_ctrl_open(priv->nfb, fdt_offset, &ctrl);
+	if (ret)
+		return ret;
+	nc_ndp_ctrl_medusa_get_max_ptr_mask(&ctrl, &max_dp_mask, &max_hp_mask);
+
+	dl->nb_max = RTE_MIN(max_dp_mask + 1, 32768u);
+	dl->nb_min = NFB_NDP_PKT_BURST * 2;
+
+	nc_ndp_ctrl_close(&ctrl);
+	return 0;
+}
