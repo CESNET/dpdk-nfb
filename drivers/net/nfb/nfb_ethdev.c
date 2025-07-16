@@ -693,7 +693,7 @@ nfb_eth_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 		nc_rxmac_read_status(internals->rxmac[i], &status);
 		break;
 	}
-	if (status.frame_length_max_capable < mtu)
+	if (status.frame_length_max_capable < mtu && status.frame_length_max_capable != 0)
 		return -EINVAL;
 
 	for (i = 0; i < internals->max_rxmac; ++i)
