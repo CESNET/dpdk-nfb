@@ -1169,19 +1169,40 @@ nfb_eth_dev_uninit(struct rte_eth_dev *dev)
 	return 0;
 }
 
+static int fill_port_mask(const char *key __rte_unused, const char *value, void *opaque)
+{
+	int ret = 0;
+	char *end = NULL;
+	uint64_t *port_mask = opaque;
+	int port;
+
+	port = strtol(value, &end, 16);
+	if ((value[0] == '\0') || (end == NULL) || (*end != '\0'))
+		ret = -1;
+
+	if (ret != 0 || port >= 64 || port < 0)
+		return -1;
+
+	*port_mask |= (1ull << port);
+	return 0;
+}
+
 int
 nfb_eth_common_probe(struct rte_device *device,
 		ethdev_bus_specific_init specific_init, void *specific_device,
 		struct nfb_init_params *params, int ep_index)
 {
 	int i;
-	int ret;
+	int ret = 0;
 	int basename_len;
 
 	struct nc_ifc_info *ifc;
 	struct nfb_device *nfb_dev;
 	struct rte_eth_dev *eth_dev;
 	struct pmd_internals *p;
+
+	struct rte_kvargs *kvlist;
+	uint64_t port_mask = 0xFFFFFFFFFFFFFFFFull;
 
 	basename_len = strlen(params->name);
 
@@ -1193,12 +1214,33 @@ nfb_eth_common_probe(struct rte_device *device,
 
 	nc_ifc_map_info_create_ordinary(nfb_dev, &params->map_info);
 
+	if (params->args != NULL && strlen(params->args) > 0) {
+		kvlist = rte_kvargs_parse(params->args, VALID_KEYS);
+		if (kvlist == NULL) {
+			RTE_LOG(ERR, PMD, "Failed to parse device arguments %s\n", params->args);
+			return -EINVAL;
+		}
+		if (rte_kvargs_count(kvlist, NFB_ARG_PORT)) {
+			port_mask = 0;
+			if (rte_kvargs_process(kvlist, NFB_ARG_PORT, fill_port_mask, (void*) &port_mask))
+				ret = -1;
+		}
+		rte_kvargs_free(kvlist);
+		if (ret || port_mask >= (1ull << (params->map_info.ifc_cnt))) {
+			RTE_LOG(ERR, PMD, "Failed to parse device port argument\n");
+			return -EINVAL;
+		}
+	}
+
 	for (i = 0; i < params->map_info.ifc_cnt; i++) {
 		ifc = params->ifc_info = &params->map_info.ifc[i];
 
 		/* Skip interfaces which doesn't belong to this PCI device */
 		if ((ep_index != -1 && ifc->ep != ep_index) ||
 				(ifc->flags & NC_IFC_INFO_FLAG_ACTIVE) == 0)
+			continue;
+
+		if ((port_mask & (1ull << i)) == 0)
 			continue;
 
 		snprintf(params->name + basename_len, sizeof(params->name) - basename_len,
