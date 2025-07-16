@@ -933,6 +933,17 @@ static const struct eth_dev_ops ops = {
 	.fec_set = nfb_eth_fec_set,
 };
 
+static uint16_t nfb_eth_empty_rx(void *queue __rte_unused, struct rte_mbuf **bufs __rte_unused, uint16_t nb_pkts __rte_unused)
+{
+	return 0;
+}
+
+static uint16_t nfb_eth_empty_tx(void *queue __rte_unused, struct rte_mbuf **bufs, uint16_t nb_pkts)
+{
+	rte_pktmbuf_free_bulk(bufs, nb_pkts);
+	return nb_pkts;
+}
+
 /**
  * DPDK callback to initialize an ethernet device
  *
@@ -1041,6 +1052,14 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	/* Get number of available DMA RX and TX queues */
 	priv->max_rx_queues = ifc->rxq_cnt;
 	priv->max_tx_queues = ifc->txq_cnt;
+
+	if (priv->max_rx_queues == 0 || priv->max_tx_queues == 0) {
+		internals->flags |= NFB_QUEUE_DRIVER_EMPTY;
+		priv->max_rx_queues = 1;
+		priv->max_tx_queues = 1;
+		dev->rx_pkt_burst = nfb_eth_empty_rx;
+		dev->tx_pkt_burst = nfb_eth_empty_tx;
+	}
 
 	priv->total_rx_queues = mi->rxq_cnt;
 

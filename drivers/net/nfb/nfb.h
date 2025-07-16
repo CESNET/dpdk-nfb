@@ -43,6 +43,7 @@
 #define NFB_QUEUE_DRIVER_NDP_SHARED 1
 #define NFB_QUEUE_DRIVER_NATIVE 2
 #define NFB_RETA_INDEX_GLOBAL 4
+#define NFB_QUEUE_DRIVER_EMPTY 8
 
 /* Device arguments */
 #define NFB_ARG_RXHDR_DYNFIELD "rxhdr_dynfield"

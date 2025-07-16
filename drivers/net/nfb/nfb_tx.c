@@ -16,7 +16,8 @@ nfb_eth_tx_queue_start(struct rte_eth_dev *dev, uint16_t txq_id)
 	struct ndp_tx_queue *txq = dev->data->tx_queues[txq_id];
 	int ret = 0;
 
-	if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (txq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_tx_queue_start(dev, txq);
 	} else {
 		if (txq->queue == NULL) {
@@ -42,7 +43,8 @@ nfb_eth_tx_queue_stop(struct rte_eth_dev *dev, uint16_t txq_id)
 	if (txq->state == RTE_ETH_QUEUE_STATE_STOPPED)
 		return 0;
 
-	if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (txq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_tx_queue_stop(dev, txq);
 	} else {
 		if (txq->queue == NULL) {
@@ -78,7 +80,9 @@ nfb_eth_tx_queue_setup(struct rte_eth_dev *dev, uint16_t tx_queue_id,
 		return -ENOMEM;
 	}
 
-	if (internals->flags & NFB_QUEUE_DRIVER_NDP_SHARED) {
+	if (internals->flags & NFB_QUEUE_DRIVER_EMPTY) {
+		txq->queue_driver = NFB_QUEUE_DRIVER_EMPTY;
+	} else if (internals->flags & NFB_QUEUE_DRIVER_NDP_SHARED) {
 		txq->queue_driver = NFB_QUEUE_DRIVER_NDP_SHARED;
 	} else {
 		txq->queue_driver = NFB_QUEUE_DRIVER_NATIVE;
@@ -107,7 +111,8 @@ nfb_eth_tx_queue_init(struct rte_eth_dev *dev, uint16_t tx_queue_id,
 	int ret;
 	struct pmd_internals *internals = dev->process_private;
 
-	if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (txq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_tx_queue_setup(dev, tx_queue_id, nb_tx_desc, socket_id, tx_conf, txq);
 		if (ret)
 			return ret;
@@ -136,9 +141,9 @@ nfb_eth_tx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 {
 	struct ndp_tx_queue *txq = dev->data->tx_queues[qid];
 
-	if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (txq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		return nfb_ndp_tx_queue_release(dev, txq);
-
 	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NDP_SHARED) {
 		if (txq->queue != NULL) {
 			ndp_close_tx_queue(txq->queue);

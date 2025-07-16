@@ -25,7 +25,8 @@ nfb_eth_rx_queue_start(struct rte_eth_dev *dev, uint16_t rxq_id)
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[rxq_id];
 	int ret = 0;
 
-	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_rx_queue_start(dev, rxq);
 	} else {
 		if (rxq->queue == NULL) {
@@ -51,7 +52,8 @@ nfb_eth_rx_queue_stop(struct rte_eth_dev *dev, uint16_t rxq_id)
 	if (rxq->state == RTE_ETH_QUEUE_STATE_STOPPED)
 		return 0;
 
-	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_rx_queue_stop(dev, rxq);
 	} else {
 		if (rxq->queue == NULL) {
@@ -99,13 +101,15 @@ nfb_eth_rx_queue_setup(struct rte_eth_dev *dev,
 
 	rxq->flags = 0;
 
-	if (internals->flags & NFB_QUEUE_DRIVER_NDP_SHARED) {
+	if (internals->flags & NFB_QUEUE_DRIVER_EMPTY) {
+		rxq->queue_driver = NFB_QUEUE_DRIVER_EMPTY;
+	} else if (internals->flags & NFB_QUEUE_DRIVER_NDP_SHARED) {
 		rxq->queue_driver = NFB_QUEUE_DRIVER_NDP_SHARED;
 	} else {
 		rxq->queue_driver = NFB_QUEUE_DRIVER_NATIVE;
 	}
 
-	/* nfb queue id doesn't neccessary corresponds to txq_id */
+	/* nfb queue id doesn't neccessary corresponds to rxq_id */
 	nfb_qid = internals->queue_map_rx[rx_queue_id];
 
 	ret = nfb_eth_rx_queue_init(dev, nfb_qid, nb_rx_desc, socket_id, rx_conf,
@@ -158,7 +162,8 @@ nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 
 	fdt = nfb_get_fdt(priv->nfb);
 
-	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_rx_queue_setup(dev, rx_queue_id, nb_rx_desc, socket_id, rx_conf, mb_pool, rxq);
 		if (ret)
 			return ret;
@@ -297,7 +302,8 @@ nfb_eth_rx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 {
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[qid];
 
-	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		nfb_ndp_rx_queue_release(dev, rxq);
 	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NDP_SHARED) {
 		/* FIXME: free rxq */
