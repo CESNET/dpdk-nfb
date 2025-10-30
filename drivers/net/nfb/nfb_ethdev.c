@@ -1224,9 +1224,11 @@ nfb_eth_common_probe(struct rte_device *device,
 			port_mask = 0;
 			if (rte_kvargs_process(kvlist, NFB_ARG_PORT, fill_port_mask, (void*) &port_mask))
 				ret = -1;
+			if (ret || port_mask >= (1ull << (params->map_info.ifc_cnt)))
+				port_mask = 0;
 		}
 		rte_kvargs_free(kvlist);
-		if (ret || port_mask >= (1ull << (params->map_info.ifc_cnt))) {
+		if (port_mask == 0) {
 			RTE_LOG(ERR, PMD, "Failed to parse device port argument\n");
 			return -EINVAL;
 		}
