@@ -31,6 +31,7 @@
 
 static const char * const VALID_KEYS[] = {
 	NFB_ARG_PORT,
+	NFB_ARG_RETA_INDEX_GLOBAL,
 	NULL
 };
 
@@ -42,6 +43,7 @@ struct nfb_ifc_create_params {
 	int basename_len;       /* Cached real length of original probe_params->name */
 	/* Return value of failed nfb_eth_dev_create_for_ifc when rte_kvargs_process is used */
 	int ret;
+	uint64_t flags;
 };
 
 /* The TAILQ entries are used for cleanup of allocated resources
@@ -275,7 +277,7 @@ static int
 nfb_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	int ret;
-	int si, di;
+	int si, di, ti;
 	struct rte_eth_conf *dev_conf = &dev->data->dev_conf;
 	struct pmd_internals *intl = dev->process_private;
 	struct pmd_priv *priv = dev->data->dev_private;
@@ -303,7 +305,14 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 
 	if (intl->comp_rss != NULL && intl->max_eth && nb_rx) {
 		for (si = 0; si < nc_nic_rss_get_reta_size(intl->comp_rss); si++) {
-			di = priv->queue_map_rx[0] + (si % nb_rx);
+			if (priv->flags & NFB_FLAG_RETA_INDEX_GLOBAL) {
+				ti = si * priv->max_rx_queues;
+				di = ti % priv->total_rx_queues;
+				di += (ti / priv->total_rx_queues) % nb_rx;
+			} else {
+				di = priv->queue_map_rx[0] + (si % nb_rx);
+			}
+
 			nc_nic_rss_set_reta(intl->comp_rss, intl->eth_node[0].channel_id, si, di);
 		}
 	}
@@ -1051,8 +1060,10 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	nfb_eth_link_update(dev, 0);
 
 	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+		priv->flags = params->flags;
 		priv->max_rx_queues = max_rx_queues;
 		priv->max_tx_queues = max_tx_queues;
+		priv->total_rx_queues = mi->rxq_cnt;
 
 		priv->queue_map_rx = rte_calloc("NFB queue map", max_rx_queues + max_tx_queues,
 				sizeof(*priv->queue_map_rx), 0);
@@ -1248,6 +1259,8 @@ nfb_eth_common_probe(struct nfb_probe_params *params)
 	int i;
 	int ret;
 
+	const char *arg_val;
+
 	struct nfb_device *nfb_dev;
 	struct nfb_ifc_create_params ifc_params;
 	struct rte_kvargs *kvlist = NULL;
@@ -1265,6 +1278,7 @@ nfb_eth_common_probe(struct nfb_probe_params *params)
 	if (ret)
 		goto err_map_info_create;
 
+	ifc_params.flags = 0;
 	if (params->args != NULL && strlen(params->args) > 0) {
 		kvlist = rte_kvargs_parse(params->args, VALID_KEYS);
 		if (kvlist == NULL) {
@@ -1272,6 +1286,10 @@ nfb_eth_common_probe(struct nfb_probe_params *params)
 			ret = -EINVAL;
 			goto err_parse_args;
 		}
+
+		arg_val = rte_kvargs_get(kvlist, NFB_ARG_RETA_INDEX_GLOBAL);
+		if (arg_val && strcmp(arg_val, "1") == 0)
+			ifc_params.flags |= NFB_FLAG_RETA_INDEX_GLOBAL;
 	}
 
 	ifc_params.ret = 0;

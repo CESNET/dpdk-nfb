@@ -44,11 +44,15 @@ extern int nfb_logtype;
 
 #define RTE_NFB_DRIVER_NAME net_nfb
 
+#define NFB_FLAG_RETA_INDEX_GLOBAL RTE_BIT64(0)
+
 /* Device arguments */
 #define NFB_ARG_PORT "port"
+#define NFB_ARG_RETA_INDEX_GLOBAL "reta_index_global"
 
 #define NFB_COMMON_ARGS \
 	NFB_ARG_PORT "=<number>" \
+	NFB_ARG_RETA_INDEX_GLOBAL "=<0|1>" \
 	""
 
 struct eth_node {
@@ -81,8 +85,10 @@ struct pmd_internals {
  * Inited in the RTE_PROC_PRIMARY, stored in dev->data->dev_private.
  */
 struct pmd_priv {
+	uint64_t flags;                 /**< Enabled features on device */
 	uint16_t max_rx_queues;
 	uint16_t max_tx_queues;
+	uint16_t total_rx_queues;       /**< Total Rx queues in firmware (not only on port / ifc) */
 
 	/** Mapping from DPDK RX queue index to firmware queue ID */
 	int             *queue_map_rx;
