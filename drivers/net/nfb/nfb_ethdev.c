@@ -414,6 +414,7 @@ nfb_eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->max_mtu = dev_info->max_rx_pktlen - (RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN);
 	dev_info->max_rx_queues = priv->max_rx_queues;
 	dev_info->max_tx_queues = priv->max_tx_queues;
+	dev_info->max_rx_mempools = priv->max_rx_queues;
 	dev_info->speed_capa = RTE_ETH_LINK_SPEED_FIXED;
 	dev_info->rx_offload_capa =
 		RTE_ETH_RX_OFFLOAD_TIMESTAMP;
