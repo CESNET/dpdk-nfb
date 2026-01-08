@@ -105,6 +105,9 @@ nfb_eth_rx_queue_init(struct nfb_device *nfb,
 	const struct rte_pktmbuf_pool_private *mbp_priv =
 		rte_mempool_get_priv(mb_pool);
 
+	struct nfb_fdt_packed_item pi;
+	int off;
+
 	if (nfb == NULL)
 		return -EINVAL;
 
@@ -121,6 +124,21 @@ nfb_eth_rx_queue_init(struct nfb_device *nfb,
 	rxq->rx_pkts = 0;
 	rxq->rx_bytes = 0;
 	rxq->err_pkts = 0;
+
+	rxq->timestamp_off = -1;
+	rxq->timestamp_vld_off = -1;
+	off = ndp_header_fdt_node_offset(nfb_get_fdt(nfb), 0, 0);
+	if (off >= 0 && nfb_timestamp_dynfield_offset >= 0) {
+		pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(nfb), off, "timestamp");
+		if (/*pi.offset >= 0 && */pi.width == 64 && pi.offset % 64 == 0)
+			rxq->timestamp_off = pi.offset / 8;
+
+		pi = nfb_fdt_packed_item_by_name(nfb_get_fdt(nfb), off, "timestamp.vld");
+		if (/*pi.offset >= 0 && */pi.width == 1) {
+			rxq->timestamp_vld_off = pi.offset / 8;
+			rxq->timestamp_vld_mask = (1 << (pi.offset % 8));
+		}
+	}
 
 	return 0;
 }
