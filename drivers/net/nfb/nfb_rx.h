@@ -108,6 +108,8 @@ int nfb_ndp_rx_queue_setup(struct rte_eth_dev *dev __rte_unused,
 
 void nfb_ndp_rx_queue_release(struct rte_eth_dev *dev, struct ndp_rx_queue *q);
 
+int nfb_ndp_queue_get_desc_lim(struct rte_eth_dev *dev, int dir, struct rte_eth_desc_lim *dl);
+
 /**
  * Initialize ndp_rx_queue structure
  *

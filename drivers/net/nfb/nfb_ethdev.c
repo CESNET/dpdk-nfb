@@ -445,6 +445,11 @@ nfb_eth_dev_info(struct rte_eth_dev *dev,
 		dev_info->rx_offload_capa |= RTE_ETH_RX_OFFLOAD_RSS_HASH;
 	}
 
+	if (priv->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+		nfb_ndp_queue_get_desc_lim(dev, 0, &dev_info->rx_desc_lim);
+		nfb_ndp_queue_get_desc_lim(dev, 1, &dev_info->tx_desc_lim);
+	}
+
 	return 0;
 }
 
