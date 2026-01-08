@@ -16,6 +16,7 @@
 #include <netcope/txmac.h>
 #include <netcope/mdio.h>
 #include <netcope/ieee802_3.h>
+#include <netcope/nic_rss.h>
 
 #include <ethdev_pci.h>
 #include <rte_kvargs.h>
@@ -52,6 +53,7 @@ static struct nfb_pmd_internals_head nfb_eth_dev_list =
 
 static int nfb_eth_dev_uninit(struct rte_eth_dev *dev);
 static int nfb_eth_mtu_set(struct rte_eth_dev *dev, uint16_t mtu);
+static int nfb_eth_rss_update(struct rte_eth_dev *dev, struct rte_eth_rss_conf *rss_conf);
 
 static int
 nfb_mdio_read(void *priv, int prtad, int devad, uint16_t addr)
@@ -137,6 +139,8 @@ nfb_nc_eth_init(struct pmd_internals *intl, struct nfb_ifc_create_params *params
 
 		intl->eth_node[eth].if_info.dev = nc_mdio_open(intl->nfb, node, node_cp);
 		if (intl->eth_node[eth].if_info.dev) {
+			intl->eth_node[eth].channel_id = mi->eth[i].channel;
+
 			intl->eth_node[eth].if_info.prtad = 0;
 			intl->eth_node[eth].if_info.mdio_read = nfb_mdio_read;
 			intl->eth_node[eth].if_info.mdio_write = nfb_mdio_write;
@@ -271,7 +275,12 @@ static int
 nfb_eth_dev_configure(struct rte_eth_dev *dev)
 {
 	int ret;
+	int si, di;
 	struct rte_eth_conf *dev_conf = &dev->data->dev_conf;
+	struct pmd_internals *intl = dev->process_private;
+	struct pmd_priv *priv = dev->data->dev_private;
+
+	uint16_t nb_rx = dev->data->nb_rx_queues;
 
 	ret = nfb_eth_mtu_set(dev, dev_conf->rxmode.mtu);
 	if (ret)
@@ -285,6 +294,17 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 			NFB_LOG(ERR, "Cannot register Rx timestamp field/flag %d", ret);
 			ret = -ENOMEM;
 			goto err_ts_register;
+		}
+	}
+
+	if (dev_conf->rxmode.mq_mode & RTE_ETH_MQ_RX_RSS_FLAG) {
+		nfb_eth_rss_update(dev, &dev_conf->rx_adv_conf.rss_conf);
+	}
+
+	if (intl->comp_rss != NULL && intl->max_eth && nb_rx) {
+		for (si = 0; si < nc_nic_rss_get_reta_size(intl->comp_rss); si++) {
+			di = priv->queue_map_rx[0] + (si % nb_rx);
+			nc_nic_rss_set_reta(intl->comp_rss, intl->eth_node[0].channel_id, si, di);
 		}
 	}
 
@@ -348,6 +368,21 @@ nfb_eth_dev_info(struct rte_eth_dev *dev,
 	if (intl->max_eth) {
 		nfb_mdio_cl45_pma_get_speed_capa(&intl->eth_node[0].if_info,
 				&dev_info->speed_capa);
+	}
+
+	dev_info->flow_type_rss_offloads = 0;
+	dev_info->hash_key_size = 0;
+	dev_info->reta_size = 0;
+	if (intl->comp_rss) {
+		dev_info->reta_size = nc_nic_rss_get_reta_size(intl->comp_rss);
+		dev_info->hash_key_size = nc_nic_rss_get_key_size(intl->comp_rss);
+		dev_info->flow_type_rss_offloads =
+			RTE_ETH_RSS_IP |
+			RTE_ETH_RSS_UDP | RTE_ETH_RSS_TCP | RTE_ETH_RSS_SCTP |
+			RTE_ETH_RSS_L3_SRC_ONLY | RTE_ETH_RSS_L3_DST_ONLY |
+			RTE_ETH_RSS_L4_SRC_ONLY | RTE_ETH_RSS_L4_DST_ONLY;
+
+		dev_info->rx_offload_capa |= RTE_ETH_RX_OFFLOAD_RSS_HASH;
 	}
 
 	return 0;
@@ -706,6 +741,209 @@ nfb_eth_fec_set(struct rte_eth_dev *dev, uint32_t fec_capa)
 	return 0;
 }
 
+static int
+nfb_eth_rss_update(struct rte_eth_dev *dev, struct rte_eth_rss_conf *rss_conf)
+{
+	static const uint8_t default_rss_key[] = {
+		0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a,
+		0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a,
+		0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a,
+		0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a,
+		0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a, 0x6d, 0x5a,
+	};
+
+	struct pmd_internals *intl = dev->process_private;
+
+	int ret;
+	int len;
+	int i, ch;
+	uint32_t hf;
+	const uint8_t *key;
+
+	if (intl->comp_rss == NULL)
+		return -ENODEV;
+
+	if (rss_conf->rss_key) {
+		key = rss_conf->rss_key;
+		len = rss_conf->rss_key_len;
+	} else {
+		key = default_rss_key;
+		len = sizeof(default_rss_key);
+	}
+
+	hf = 0;
+
+	if (rss_conf->rss_hf & RTE_ETH_RSS_IPV4)
+		hf |= NC_NIC_RSS_HF_IPV4;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_FRAG_IPV4)
+		hf |= NC_NIC_RSS_HF_FRAG_IPV4;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_NONFRAG_IPV4_TCP)
+		hf |= NC_NIC_RSS_HF_NONFRAG_IPV4_TCP;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_NONFRAG_IPV4_UDP)
+		hf |= NC_NIC_RSS_HF_NONFRAG_IPV4_UDP;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_NONFRAG_IPV4_SCTP)
+		hf |= NC_NIC_RSS_HF_NONFRAG_IPV4_SCTP;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_NONFRAG_IPV4_OTHER)
+		hf |= NC_NIC_RSS_HF_NONFRAG_IPV4_OTHER;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_IPV6)
+		hf |= NC_NIC_RSS_HF_IPV6;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_FRAG_IPV6)
+		hf |= NC_NIC_RSS_HF_FRAG_IPV6;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_NONFRAG_IPV6_TCP)
+		hf |= NC_NIC_RSS_HF_NONFRAG_IPV6_TCP;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_NONFRAG_IPV6_UDP)
+		hf |= NC_NIC_RSS_HF_NONFRAG_IPV6_UDP;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_NONFRAG_IPV6_SCTP)
+		hf |= NC_NIC_RSS_HF_NONFRAG_IPV6_SCTP;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_NONFRAG_IPV6_OTHER)
+		hf |= NC_NIC_RSS_HF_NONFRAG_IPV6_OTHER;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_C_VLAN)
+		hf |= NC_NIC_RSS_HF_C_VLAN;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_ESP)
+		hf |= NC_NIC_RSS_HF_ESP;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_AH)
+		hf |= NC_NIC_RSS_HF_AH;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_L2TPV3)
+		hf |= NC_NIC_RSS_HF_L2TPV3;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_PFCP)
+		hf |= NC_NIC_RSS_HF_PFCP;
+	if (rss_conf->rss_hf & RTE_ETH_RSS_PPPOE)
+		hf |= NC_NIC_RSS_HF_PPPOE;
+
+	for (i = 0; i < intl->max_eth; i++) {
+		ch = intl->eth_node[i].channel_id;
+
+		ret = nc_nic_rss_write_key(intl->comp_rss, ch, key, len);
+		if (ret)
+			return ret;
+
+		ret = nc_nic_rss_set_input(intl->comp_rss, ch, rss_conf->rss_hf);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int
+nfb_eth_rss_conf_get(struct rte_eth_dev *dev, struct rte_eth_rss_conf *rss_conf)
+{
+	struct pmd_internals *intl = dev->process_private;
+
+	int ret;
+	uint32_t hf;
+
+	if (intl->comp_rss == NULL || intl->max_eth == 0)
+		return -ENODEV;
+
+	ret = nc_nic_rss_get_input(intl->comp_rss, intl->eth_node[0].channel_id, &hf);
+	if (ret)
+		return ret;
+
+	rss_conf->rss_hf = 0;
+
+	if (hf & NC_NIC_RSS_HF_IPV4)
+		rss_conf->rss_hf |= RTE_ETH_RSS_IPV4;
+	if (hf & NC_NIC_RSS_HF_FRAG_IPV4)
+		rss_conf->rss_hf |= RTE_ETH_RSS_FRAG_IPV4;
+	if (hf & NC_NIC_RSS_HF_NONFRAG_IPV4_TCP)
+		rss_conf->rss_hf |= RTE_ETH_RSS_NONFRAG_IPV4_TCP;
+	if (hf & NC_NIC_RSS_HF_NONFRAG_IPV4_UDP)
+		rss_conf->rss_hf |= RTE_ETH_RSS_NONFRAG_IPV4_UDP;
+	if (hf & NC_NIC_RSS_HF_NONFRAG_IPV4_SCTP)
+		rss_conf->rss_hf |= RTE_ETH_RSS_NONFRAG_IPV4_SCTP;
+	if (hf & NC_NIC_RSS_HF_NONFRAG_IPV4_OTHER)
+		rss_conf->rss_hf |= RTE_ETH_RSS_NONFRAG_IPV4_OTHER;
+	if (hf & NC_NIC_RSS_HF_IPV6)
+		rss_conf->rss_hf |= RTE_ETH_RSS_IPV6;
+	if (hf & NC_NIC_RSS_HF_FRAG_IPV6)
+		rss_conf->rss_hf |= RTE_ETH_RSS_FRAG_IPV6;
+	if (hf & NC_NIC_RSS_HF_NONFRAG_IPV6_TCP)
+		rss_conf->rss_hf |= RTE_ETH_RSS_NONFRAG_IPV6_TCP;
+	if (hf & NC_NIC_RSS_HF_NONFRAG_IPV6_UDP)
+		rss_conf->rss_hf |= RTE_ETH_RSS_NONFRAG_IPV6_UDP;
+	if (hf & NC_NIC_RSS_HF_NONFRAG_IPV6_SCTP)
+		rss_conf->rss_hf |= RTE_ETH_RSS_NONFRAG_IPV6_SCTP;
+	if (hf & NC_NIC_RSS_HF_NONFRAG_IPV6_OTHER)
+		rss_conf->rss_hf |= RTE_ETH_RSS_NONFRAG_IPV6_OTHER;
+	if (hf & NC_NIC_RSS_HF_C_VLAN)
+		rss_conf->rss_hf |= RTE_ETH_RSS_C_VLAN;
+	if (hf & NC_NIC_RSS_HF_ESP)
+		rss_conf->rss_hf |= RTE_ETH_RSS_ESP;
+	if (hf & NC_NIC_RSS_HF_AH)
+		rss_conf->rss_hf |= RTE_ETH_RSS_AH;
+	if (hf & NC_NIC_RSS_HF_L2TPV3)
+		rss_conf->rss_hf |= RTE_ETH_RSS_L2TPV3;
+	if (hf & NC_NIC_RSS_HF_PFCP)
+		rss_conf->rss_hf |= RTE_ETH_RSS_PFCP;
+	if (hf & NC_NIC_RSS_HF_PPPOE)
+		rss_conf->rss_hf |= RTE_ETH_RSS_PPPOE;
+
+	if (rss_conf->rss_key_len > 0 && rss_conf->rss_key) {
+		ret = nc_nic_rss_read_key(intl->comp_rss, intl->eth_node[0].channel_id,
+				rss_conf->rss_key, rss_conf->rss_key_len);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int nfb_eth_reta_update(struct rte_eth_dev *dev,
+		struct rte_eth_rss_reta_entry64 *reta_conf,
+		uint16_t reta_size)
+{
+	int ret;
+	int eth;
+	uint16_t i, queue;
+	uint16_t idx, shift;
+	struct pmd_internals *intl = dev->process_private;
+
+	if (intl->comp_rss == NULL || intl->max_eth == 0)
+		return -ENODEV;
+
+	for (eth = 0; eth < intl->max_eth; eth++) {
+		for (i = 0; i < reta_size; i++) {
+			idx = i / RTE_ETH_RETA_GROUP_SIZE;
+			shift = i % RTE_ETH_RETA_GROUP_SIZE;
+			if (reta_conf[idx].mask & RTE_BIT64(shift)) {
+				queue = reta_conf[idx].reta[shift];
+				ret = nc_nic_rss_set_reta(intl->comp_rss,
+						intl->eth_node[eth].channel_id, i, queue);
+				if (ret)
+					return ret;
+			}
+		}
+	}
+	return 0;
+}
+
+static int nfb_eth_reta_query(struct rte_eth_dev *dev,
+		struct rte_eth_rss_reta_entry64 *reta_conf, uint16_t reta_size)
+{
+	int ret;
+	int qid;
+	uint16_t i;
+	uint16_t idx, shift;
+	struct pmd_internals *intl = dev->process_private;
+
+	if (intl->comp_rss == NULL || intl->max_eth == 0)
+		return -ENODEV;
+
+	for (i = 0; i < reta_size; i++) {
+		idx = i / RTE_ETH_RETA_GROUP_SIZE;
+		shift = i % RTE_ETH_RETA_GROUP_SIZE;
+		if (reta_conf[idx].mask & RTE_BIT64(shift)) {
+			ret = nc_nic_rss_get_reta(intl->comp_rss,
+					intl->eth_node[0].channel_id, i, &qid);
+			if (ret)
+				return ret;
+			reta_conf[idx].reta[shift] = (uint16_t)qid;
+		}
+	}
+	return 0;
+}
+
 static const struct eth_dev_ops ops = {
 	.dev_start = nfb_eth_dev_start,
 	.dev_stop = nfb_eth_dev_stop,
@@ -733,6 +971,10 @@ static const struct eth_dev_ops ops = {
 	.mac_addr_add = nfb_eth_mac_addr_add,
 	.mac_addr_remove = nfb_eth_mac_addr_remove,
 	.mtu_set = nfb_eth_mtu_set,
+	.rss_hash_update = nfb_eth_rss_update,
+	.rss_hash_conf_get = nfb_eth_rss_conf_get,
+	.reta_update = nfb_eth_reta_update,
+	.reta_query = nfb_eth_reta_query,
 	.fw_version_get = nfb_eth_fw_version_get,
 	.fec_get = nfb_eth_fec_get,
 	.fec_set = nfb_eth_fec_set,
@@ -788,6 +1030,15 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	ret = nfb_nc_eth_init(internals, params);
 	if (ret)
 		goto err_nc_eth_init;
+
+	for (i = 0; i < mi->eth_cnt; i++) {
+		if (mi->eth[i].ifc != ifc->id)
+			continue;
+		ret = nfb_comp_find(internals->nfb, COMP_CESNET_NIC_RSS, mi->eth[i].rx_stream);
+		internals->comp_rss = nc_nic_rss_open(internals->nfb, ret);
+		/* Use just first RSS component, more per ifc is not expected */
+		break;
+	}
 
 	/* Set rx, tx burst functions */
 	dev->rx_pkt_burst = nfb_eth_ndp_rx;
@@ -907,6 +1158,9 @@ nfb_eth_dev_uninit(struct rte_eth_dev *dev)
 		rte_free(priv->queue_map_rx);
 
 	TAILQ_REMOVE(&nfb_eth_dev_list, internals, eth_dev_list);
+
+	if (internals->comp_rss)
+		nc_nic_rss_close(internals->comp_rss);
 
 	nfb_nc_eth_deinit(internals);
 	nfb_close(internals->nfb);

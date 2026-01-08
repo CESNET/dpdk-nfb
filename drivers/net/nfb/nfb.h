@@ -53,7 +53,10 @@ extern int nfb_logtype;
 
 struct eth_node {
 	struct mdio_if_info if_info;    /**< MDIO interface handles */
+	int channel_id;			/**< Index of Eth channel inside one fw stream/pipeline */
 };
+
+struct nc_nic_rss;
 
 /*
  * Handles obtained from the libnfb: each process must use own instance.
@@ -66,6 +69,7 @@ struct pmd_internals {
 	struct nc_rxmac  **rxmac;       /**< Array of Rx MAC handles */
 	struct nc_txmac  **txmac;       /**< Array of Tx MAC handles */
 	struct eth_node	 *eth_node;     /**< Array of Eth nodes */
+	struct nc_nic_rss *comp_rss;	/**< Handle of RSS component */
 	struct nfb_device *nfb;
 
 	TAILQ_ENTRY(pmd_internals) eth_dev_list;  /**< Item in list of all devices */
