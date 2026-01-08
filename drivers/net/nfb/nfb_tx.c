@@ -14,9 +14,10 @@ int
 nfb_eth_tx_queue_start(struct rte_eth_dev *dev, uint16_t txq_id)
 {
 	struct ndp_tx_queue *txq = dev->data->tx_queues[txq_id];
-	int ret;
+	int ret = 0;
 
-	if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (txq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_tx_queue_start(dev, txq);
 	} else {
 		if (txq->queue == NULL) {
@@ -40,9 +41,10 @@ int
 nfb_eth_tx_queue_stop(struct rte_eth_dev *dev, uint16_t txq_id)
 {
 	struct ndp_tx_queue *txq = dev->data->tx_queues[txq_id];
-	int ret;
+	int ret = 0;
 
-	if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (txq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_tx_queue_stop(dev, txq);
 	} else {
 		if (txq->queue == NULL) {
@@ -109,7 +111,8 @@ nfb_eth_tx_queue_init(struct rte_eth_dev *dev,
 	int ret;
 	struct pmd_internals *internals = dev->process_private;
 
-	if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (txq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_tx_queue_setup(dev, qid, nb_tx_desc, socket_id, tx_conf, txq);
 		if (ret)
 			return ret;
@@ -138,7 +141,8 @@ nfb_eth_tx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 {
 	struct ndp_tx_queue *txq = dev->data->tx_queues[qid];
 
-	if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (txq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		return nfb_ndp_tx_queue_release(dev, txq);
 	} else if (txq->queue_driver == NFB_QUEUE_DRIVER_NDP_SHARED) {
 		if (txq->queue != NULL) {

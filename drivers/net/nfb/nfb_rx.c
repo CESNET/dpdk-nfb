@@ -24,7 +24,8 @@ nfb_eth_rx_queue_start(struct rte_eth_dev *dev, uint16_t rxq_id)
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[rxq_id];
 	int ret = 0;
 
-	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_rx_queue_start(dev, rxq);
 	} else {
 		ret = ndp_queue_start(rxq->queue);
@@ -43,9 +44,10 @@ int
 nfb_eth_rx_queue_stop(struct rte_eth_dev *dev, uint16_t rxq_id)
 {
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[rxq_id];
-	int ret;
+	int ret = 0;
 
-	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_rx_queue_stop(dev, rxq);
 	} else {
 		ret = ndp_queue_stop(rxq->queue);
@@ -150,7 +152,8 @@ nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 	if (nfb == NULL)
 		return -EINVAL;
 
-	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		ret = nfb_ndp_rx_queue_setup(dev, qid, nb_rx_desc,
 				socket_id, rx_conf, mb_pool, rxq);
 		if (ret)
@@ -291,7 +294,8 @@ nfb_eth_rx_queue_release(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 {
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[rx_queue_id];
 
-	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_EMPTY) {
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
 		nfb_ndp_rx_queue_release(dev, rxq);
 	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NDP_SHARED) {
 		ndp_close_rx_queue(rxq->queue);

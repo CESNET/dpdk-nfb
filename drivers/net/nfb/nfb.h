@@ -62,6 +62,7 @@ extern int nfb_logtype;
 	""
 
 enum nfb_queue_driver {
+	NFB_QUEUE_DRIVER_EMPTY,
 	NFB_QUEUE_DRIVER_NDP_SHARED,
 	NFB_QUEUE_DRIVER_NATIVE,
 };
