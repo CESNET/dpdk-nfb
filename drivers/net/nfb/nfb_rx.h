@@ -63,9 +63,12 @@ struct ndp_rx_offload_parser {
 
 #define NDP_RXHDR_CNT 4
 
+struct ndp_ctrl;
+
 struct ndp_rx_queue {
 	struct nfb_device *nfb;	     /* nfb dev structure */
 	struct ndp_queue *queue;     /* rx queue */
+	int qid;                     /* Queue ID in libnfb */
 	uint8_t in_port;	     /* port */
 	uint8_t
 		df_header_enable: 1; /* enable dynfield header */
@@ -78,7 +81,31 @@ struct ndp_rx_queue {
 	volatile uint64_t err_pkts;  /* erroneous packets */
 
 	struct ndp_rx_offload_parser ofp[NDP_RXHDR_CNT];        /* known headers for offload */
+
+	enum nfb_queue_driver queue_driver;
+
+	/* native queue driver variables*/
+	struct ndp_ctrl *ctrl;
+	struct rte_mbuf **mbufs;
+	const struct rte_memzone *mz_desc;
+	const struct rte_memzone *mz_hdr;
+	const struct rte_memzone *mz_update;
+
+	uint16_t nb_rx_desc;
+	uint16_t nb_rx_hdr;
 };
+
+uint16_t nfb_ndp_queue_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
+int nfb_ndp_rx_queue_start(struct rte_eth_dev *dev, struct ndp_rx_queue *q);
+int nfb_ndp_rx_queue_stop(struct rte_eth_dev *dev, struct ndp_rx_queue *q);
+int nfb_ndp_rx_queue_setup(struct rte_eth_dev *dev __rte_unused,
+		uint16_t rx_queue_id,
+		uint16_t nb_rx_desc,
+		unsigned int socket_id,
+		const struct rte_eth_rxconf *rx_conf __rte_unused,
+		struct rte_mempool *mb_pool, struct ndp_rx_queue *q);
+
+void nfb_ndp_rx_queue_release(struct rte_eth_dev *dev, struct ndp_rx_queue *q);
 
 /**
  * Initialize ndp_rx_queue structure
@@ -97,8 +124,11 @@ struct ndp_rx_queue {
  *   0 on success, a negative errno value otherwise.
  */
 int
-nfb_eth_rx_queue_init(struct nfb_device *nfb,
+nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 	int qid,
+	uint16_t nb_rx_desc,
+	unsigned int socket_id,
+	const struct rte_eth_rxconf *rx_conf,
 	uint16_t port_id,
 	struct rte_mempool *mb_pool,
 	struct ndp_rx_queue *rxq);

@@ -7,8 +7,12 @@
 #ifndef _NFB_H_
 #define _NFB_H_
 
+#include <rte_ethdev.h>
+#include <ethdev_driver.h>
+
 #include <nfb/nfb.h>
 #include <nfb/ndp.h>
+
 #include <netcope/rxmac.h>
 #include <netcope/txmac.h>
 #include <netcope/mdio_if_info.h>
@@ -18,9 +22,6 @@ extern int nfb_logtype;
 #define RTE_LOGTYPE_NFB nfb_logtype
 #define NFB_LOG(level, ...) \
 	RTE_LOG_LINE_PREFIX(level, NFB, "%s(): ", __func__, __VA_ARGS__)
-
-#include "nfb_rx.h"
-#include "nfb_tx.h"
 
 /* PCI Vendor ID */
 #define PCI_VENDOR_ID_NETCOPE 0x1b26
@@ -49,14 +50,21 @@ extern int nfb_logtype;
 
 /* Device arguments */
 #define NFB_ARG_PORT "port"
-#define NFB_ARG_RETA_INDEX_GLOBAL "reta_index_global"
+#define NFB_ARG_QUEUE_DRIVER "queue_driver"
 #define NFB_ARG_RXHDR_DYNFIELD "rxhdr_dynfield"
+#define NFB_ARG_RETA_INDEX_GLOBAL "reta_index_global"
 
 #define NFB_COMMON_ARGS \
 	NFB_ARG_PORT "=<number>" \
+	NFB_ARG_QUEUE_DRIVER "=<ndp|native>" \
 	NFB_ARG_RXHDR_DYNFIELD "=<0|1>" \
 	NFB_ARG_RETA_INDEX_GLOBAL "=<0|1>" \
 	""
+
+enum nfb_queue_driver {
+	NFB_QUEUE_DRIVER_NDP_SHARED,
+	NFB_QUEUE_DRIVER_NATIVE,
+};
 
 struct eth_node {
 	struct mdio_if_info if_info;    /**< MDIO interface handles */
@@ -92,6 +100,9 @@ struct pmd_priv {
 	uint16_t max_rx_queues;
 	uint16_t max_tx_queues;
 	uint16_t total_rx_queues;       /**< Total Rx queues in firmware (not only on port / ifc) */
+
+	enum nfb_queue_driver queue_driver;
+	int nfb_id;
 
 	/** Mapping from DPDK RX queue index to firmware queue ID */
 	int             *queue_map_rx;

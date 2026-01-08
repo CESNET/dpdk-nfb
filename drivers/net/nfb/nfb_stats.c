@@ -4,8 +4,10 @@
  * All rights reserved.
  */
 
-#include "nfb_stats.h"
 #include "nfb.h"
+#include "nfb_stats.h"
+#include "nfb_rx.h"
+#include "nfb_tx.h"
 
 int
 nfb_eth_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats,

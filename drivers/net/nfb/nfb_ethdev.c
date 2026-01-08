@@ -31,6 +31,7 @@
 
 static const char * const VALID_KEYS[] = {
 	NFB_ARG_PORT,
+	NFB_ARG_QUEUE_DRIVER,
 	NFB_ARG_RXHDR_DYNFIELD,
 	NFB_ARG_RETA_INDEX_GLOBAL,
 	NULL
@@ -45,6 +46,7 @@ struct nfb_ifc_create_params {
 	/* Return value of failed nfb_eth_dev_create_for_ifc when rte_kvargs_process is used */
 	int ret;
 	uint64_t flags;
+	int queue_driver;
 };
 
 /* The TAILQ entries are used for cleanup of allocated resources
@@ -1046,6 +1048,7 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 	int i;
 	int cnt;
 	int ret;
+	int queue_driver;
 	uint32_t mac_count;
 	struct rte_eth_dev_data *data = dev->data;
 	struct pmd_internals *internals;
@@ -1090,10 +1093,18 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 		/* Use just first RSS component, more per ifc is not expected */
 		break;
 	}
+	queue_driver = params->queue_driver;
 
 	/* Set rx, tx burst functions */
-	dev->rx_pkt_burst = nfb_eth_ndp_rx;
-	dev->tx_pkt_burst = nfb_eth_ndp_tx;
+	if (queue_driver == NFB_QUEUE_DRIVER_NDP_SHARED) {
+		dev->rx_pkt_burst = nfb_eth_ndp_rx;
+		dev->tx_pkt_burst = nfb_eth_ndp_tx;
+		NFB_LOG(INFO, "NFB: Using NDP driver for rx/tx");
+	} else {
+		dev->rx_pkt_burst = nfb_ndp_queue_rx;
+		dev->tx_pkt_burst = nfb_ndp_queue_tx;
+		NFB_LOG(INFO, "NFB: Using Native driver for rx/tx");
+	}
 
 	/* Set function callbacks for Ethernet API */
 	dev->dev_ops = &ops;
@@ -1103,6 +1114,8 @@ nfb_eth_dev_init(struct rte_eth_dev *dev, void *init_data)
 
 	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
 		priv->flags = params->flags;
+		priv->queue_driver = queue_driver;
+		priv->nfb_id = 0; /*params->nfb_id;*/ /* FIXME */
 		priv->max_rx_queues = max_rx_queues;
 		priv->max_tx_queues = max_tx_queues;
 		priv->total_rx_queues = mi->rxq_cnt;
@@ -1320,6 +1333,7 @@ nfb_eth_common_probe(struct nfb_probe_params *params)
 	if (ret)
 		goto err_map_info_create;
 
+	ifc_params.queue_driver = NFB_QUEUE_DRIVER_NATIVE;
 	ifc_params.flags = 0;
 	if (params->args != NULL && strlen(params->args) > 0) {
 		kvlist = rte_kvargs_parse(params->args, VALID_KEYS);
@@ -1328,6 +1342,10 @@ nfb_eth_common_probe(struct nfb_probe_params *params)
 			ret = -EINVAL;
 			goto err_parse_args;
 		}
+
+		arg_val = rte_kvargs_get(kvlist, NFB_ARG_QUEUE_DRIVER);
+		if (arg_val && strcmp(arg_val, "ndp") == 0)
+			ifc_params.queue_driver = NFB_QUEUE_DRIVER_NDP_SHARED;
 
 		arg_val = rte_kvargs_get(kvlist, NFB_ARG_RXHDR_DYNFIELD);
 		if (arg_val && strcmp(arg_val, "1") == 0)

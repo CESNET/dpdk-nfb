@@ -5,6 +5,7 @@
  */
 
 #include <rte_kvargs.h>
+#include <rte_malloc.h>
 
 #include "nfb.h"
 #include "nfb_rx.h"
@@ -21,14 +22,14 @@ int
 nfb_eth_rx_queue_start(struct rte_eth_dev *dev, uint16_t rxq_id)
 {
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[rxq_id];
-	int ret;
+	int ret = 0;
 
-	if (rxq->queue == NULL) {
-		NFB_LOG(ERR, "RX NDP queue is NULL");
-		return -EINVAL;
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+		ret = nfb_ndp_rx_queue_start(dev, rxq);
+	} else {
+		ret = ndp_queue_start(rxq->queue);
 	}
 
-	ret = ndp_queue_start(rxq->queue);
 	if (ret != 0)
 		goto err;
 	dev->data->rx_queue_state[rxq_id] = RTE_ETH_QUEUE_STATE_STARTED;
@@ -44,12 +45,12 @@ nfb_eth_rx_queue_stop(struct rte_eth_dev *dev, uint16_t rxq_id)
 	struct ndp_rx_queue *rxq = dev->data->rx_queues[rxq_id];
 	int ret;
 
-	if (rxq->queue == NULL) {
-		NFB_LOG(ERR, "RX NDP queue is NULL");
-		return -EINVAL;
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+		ret = nfb_ndp_rx_queue_stop(dev, rxq);
+	} else {
+		ret = ndp_queue_stop(rxq->queue);
 	}
 
-	ret = ndp_queue_stop(rxq->queue);
 	if (ret != 0)
 		return -EINVAL;
 
@@ -65,7 +66,6 @@ nfb_eth_rx_queue_setup(struct rte_eth_dev *dev,
 		const struct rte_eth_rxconf *rx_conf __rte_unused,
 		struct rte_mempool *mb_pool)
 {
-	struct pmd_internals *internals = dev->process_private;
 	struct pmd_priv *priv = dev->data->dev_private;
 
 	int ret;
@@ -86,9 +86,12 @@ nfb_eth_rx_queue_setup(struct rte_eth_dev *dev,
 
 	rxq->df_header_enable = priv->flags & NFB_FLAG_NDP_DF_HEADER ? 1 : 0;
 
+	rxq->queue_driver = priv->queue_driver;
+
 	qid = priv->queue_map_rx[rx_queue_id];
 
-	ret = nfb_eth_rx_queue_init(internals->nfb, qid, dev->data->port_id, mb_pool, rxq);
+	ret = nfb_eth_rx_queue_init(dev, qid, nb_rx_desc, socket_id, rx_conf,
+		dev->data->port_id, mb_pool, rxq);
 	if (ret)
 		goto err_queue_init;
 
@@ -111,15 +114,22 @@ static inline void him_update(uint16_t *offset, uint16_t *width,
 }
 
 int
-nfb_eth_rx_queue_init(struct nfb_device *nfb,
+nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 		int qid,
+		uint16_t nb_rx_desc,
+		unsigned int socket_id,
+		const struct rte_eth_rxconf *rx_conf,
 		uint16_t port_id,
 		struct rte_mempool *mb_pool,
 		struct ndp_rx_queue *rxq)
 {
 	int i;
+	int ret;
 	const struct rte_pktmbuf_pool_private *mbp_priv =
 		rte_mempool_get_priv(mb_pool);
+
+	struct pmd_internals *priv = dev->process_private;
+	struct nfb_device *nfb = priv->nfb;
 
 	struct nfb_fdt_packed_item pi;
 	int off;
@@ -133,17 +143,26 @@ nfb_eth_rx_queue_init(struct nfb_device *nfb,
 	if (nfb == NULL)
 		return -EINVAL;
 
-	rxq->queue = ndp_open_rx_queue(nfb, qid);
-	if (rxq->queue == NULL)
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+		ret = nfb_ndp_rx_queue_setup(dev, qid, nb_rx_desc,
+				socket_id, rx_conf, mb_pool, rxq);
+		if (ret)
+			return ret;
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NDP_SHARED) {
+		rxq->queue = ndp_open_rx_queue(nfb, qid);
+		if (rxq->queue == NULL)
+			return -EINVAL;
+	} else {
 		return -EINVAL;
+	}
 
 	fdt = nfb_get_fdt(nfb);
 
 	rxq->nfb = nfb;
+	rxq->qid = qid;
 	rxq->in_port = port_id;
 	rxq->mb_pool = mb_pool;
-	rxq->buf_size = (uint16_t)(mbp_priv->mbuf_data_room_size -
-		RTE_PKTMBUF_HEADROOM);
+	rxq->buf_size = (uint16_t)(mbp_priv->mbuf_data_room_size - RTE_PKTMBUF_HEADROOM);
 
 	rxq->rx_pkts = 0;
 	rxq->rx_bytes = 0;
@@ -259,13 +278,14 @@ nfb_eth_rx_queue_init(struct nfb_device *nfb,
 }
 
 void
-nfb_eth_rx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
+nfb_eth_rx_queue_release(struct rte_eth_dev *dev, uint16_t rx_queue_id)
 {
-	struct ndp_rx_queue *rxq = dev->data->rx_queues[qid];
+	struct ndp_rx_queue *rxq = dev->data->rx_queues[rx_queue_id];
 
-	if (rxq->queue != NULL) {
+	if (rxq->queue_driver == NFB_QUEUE_DRIVER_NATIVE) {
+		nfb_ndp_rx_queue_release(dev, rxq);
+	} else if (rxq->queue_driver == NFB_QUEUE_DRIVER_NDP_SHARED) {
 		ndp_close_rx_queue(rxq->queue);
-		rxq->queue = NULL;
-		rte_free(rxq);
 	}
+	rte_free(rxq);
 }
