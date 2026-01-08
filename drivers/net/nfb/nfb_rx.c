@@ -12,6 +12,11 @@
 uint64_t nfb_timestamp_rx_dynflag;
 int nfb_timestamp_dynfield_offset = -1;
 
+int nfb_ndp_df_header_offset;
+int nfb_ndp_df_header_length;
+int nfb_ndp_df_flags;
+uint64_t nfb_ndp_df_header_vld;
+
 int
 nfb_eth_rx_queue_start(struct rte_eth_dev *dev, uint16_t rxq_id)
 {
@@ -79,7 +84,7 @@ nfb_eth_rx_queue_setup(struct rte_eth_dev *dev,
 		return -ENOMEM;
 	}
 
-	rxq->flags = 0;
+	rxq->df_header_enable = priv->flags & NFB_FLAG_NDP_DF_HEADER ? 1 : 0;
 
 	qid = priv->queue_map_rx[rx_queue_id];
 

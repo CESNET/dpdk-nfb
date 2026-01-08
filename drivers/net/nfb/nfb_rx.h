@@ -20,6 +20,11 @@
 extern uint64_t nfb_timestamp_rx_dynflag;
 extern int nfb_timestamp_dynfield_offset;
 
+extern int nfb_ndp_df_header_offset;
+extern int nfb_ndp_df_header_length;
+extern int nfb_ndp_df_flags;
+extern uint64_t nfb_ndp_df_header_vld;
+
 static inline rte_mbuf_timestamp_t *
 nfb_timestamp_dynfield(struct rte_mbuf *mbuf)
 {
@@ -31,7 +36,8 @@ struct ndp_rx_queue {
 	struct nfb_device *nfb;	     /* nfb dev structure */
 	struct ndp_queue *queue;     /* rx queue */
 	uint8_t in_port;	     /* port */
-	uint8_t flags;               /* setup flags */
+	uint8_t
+		df_header_enable: 1; /* enable dynfield header */
 
 	struct rte_mempool *mb_pool; /* memory pool to allocate packets */
 	uint16_t buf_size;           /* mbuf size */
@@ -154,6 +160,24 @@ static inline void nfb_rx_fetch_timestamp(struct ndp_rx_queue *q, struct rte_mbu
 		mbuf->ol_flags |= nfb_timestamp_rx_dynflag;
 }
 
+static inline void
+nfb_eth_ndp_rx_df_header_fill(struct rte_mbuf *mbuf, uint16_t hdr_len, uint16_t flags)
+{
+	uint16_t *df_hdr_off;
+	uint16_t *df_hdr_len;
+	uint16_t *df_flags;
+
+	df_hdr_off = RTE_MBUF_DYNFIELD(mbuf, nfb_ndp_df_header_offset, uint16_t*);
+	df_hdr_len = RTE_MBUF_DYNFIELD(mbuf, nfb_ndp_df_header_length, uint16_t*);
+	df_flags   = RTE_MBUF_DYNFIELD(mbuf, nfb_ndp_df_flags, uint16_t*);
+
+	*df_hdr_off = mbuf->data_off;
+	*df_hdr_len = hdr_len;
+	*df_flags = flags;
+
+	mbuf->ol_flags |= nfb_ndp_df_header_vld;
+}
+
 /**
  * DPDK callback for RX.
  *
@@ -173,6 +197,8 @@ nfb_eth_ndp_rx(void *queue,
 	uint16_t nb_pkts)
 {
 	struct ndp_rx_queue *ndp = queue;
+	uint16_t data_len;
+	uint16_t hdr_len;
 	uint16_t packet_size;
 	uint64_t num_bytes = 0;
 	uint16_t num_rx;
@@ -214,18 +240,26 @@ nfb_eth_ndp_rx(void *queue,
 		mbuf = mbufs[i];
 
 		/* get the space available for data in the mbuf */
-		packet_size = packets[i].data_length;
+		data_len = packets[i].data_length;
+		hdr_len = packets[i].header_length;
+		packet_size = data_len + hdr_len;
 
 		if (likely(packet_size <= buf_size)) {
 			/* NDP packet will fit in one mbuf, go ahead and copy */
-			rte_memcpy(rte_pktmbuf_mtod(mbuf, void *),
-				packets[i].data, packet_size);
 
 			mbuf->data_len = (uint16_t)packet_size;
-
 			mbuf->pkt_len = packet_size;
 			mbuf->port = ndp->in_port;
 			mbuf->ol_flags = 0;
+
+			if (ndp->df_header_enable) {
+				nfb_eth_ndp_rx_df_header_fill(mbuf, hdr_len, packets[i].flags);
+				rte_memcpy(rte_pktmbuf_mtod(mbuf, void *),
+						packets[i].header, hdr_len);
+			}
+
+			rte_pktmbuf_adj(mbuf, hdr_len);
+			rte_memcpy(rte_pktmbuf_mtod(mbuf, void *), packets[i].data, data_len);
 
 			nfb_rx_fetch_timestamp(ndp, mbuf,
 					packets[i].header, packets[i].header_length);

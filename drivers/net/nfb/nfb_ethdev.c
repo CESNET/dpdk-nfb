@@ -31,6 +31,7 @@
 
 static const char * const VALID_KEYS[] = {
 	NFB_ARG_PORT,
+	NFB_ARG_RXHDR_DYNFIELD,
 	NFB_ARG_RETA_INDEX_GLOBAL,
 	NULL
 };
@@ -284,6 +285,46 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 
 	uint16_t nb_rx = dev->data->nb_rx_queues;
 
+	static struct rte_mbuf_dynflag df_ndp_hdr_vld = {
+		.name = "rte_net_nfb_dynflag_header_vld",
+	};
+
+	static struct rte_mbuf_dynfield df_ndp_hdr_off = {
+		.name = "rte_net_nfb_dynfield_header_offset",
+		.align = 2,
+		.size = 2,
+	};
+
+	static struct rte_mbuf_dynfield df_ndp_hdr_len = {
+		.name = "rte_net_nfb_dynfield_header_len",
+		.align = 2,
+		.size = 2,
+	};
+
+	static struct rte_mbuf_dynfield df_ndp_flags = {
+		.name = "rte_net_nfb_dynfield_ndp_flags",
+		.align = 2,
+		.size = 2,
+	};
+
+	if (priv->flags & NFB_FLAG_NDP_DF_HEADER) {
+		ret = rte_mbuf_dynflag_register(&df_ndp_hdr_vld);
+		nfb_ndp_df_header_vld = RTE_BIT64(ret);
+		nfb_ndp_df_header_offset = rte_mbuf_dynfield_register(&df_ndp_hdr_off);
+		nfb_ndp_df_header_length = rte_mbuf_dynfield_register(&df_ndp_hdr_len);
+		nfb_ndp_df_flags = rte_mbuf_dynfield_register(&df_ndp_flags);
+
+		if (ret == -1 ||
+				nfb_ndp_df_header_offset == -1 ||
+				nfb_ndp_df_header_length == -1 ||
+				nfb_ndp_df_flags == -1) {
+			NFB_LOG(ERR, "Cannot register header field/flag %d", ret);
+
+			ret = -ENOMEM;
+			goto err_hdr_register;
+		}
+	}
+
 	ret = nfb_eth_mtu_set(dev, dev_conf->rxmode.mtu);
 	if (ret)
 		goto err_mtu_set;
@@ -321,6 +362,7 @@ nfb_eth_dev_configure(struct rte_eth_dev *dev)
 
 err_ts_register:
 err_mtu_set:
+err_hdr_register:
 	nfb_eth_dev_uninit(dev);
 	return ret;
 }
@@ -1286,6 +1328,10 @@ nfb_eth_common_probe(struct nfb_probe_params *params)
 			ret = -EINVAL;
 			goto err_parse_args;
 		}
+
+		arg_val = rte_kvargs_get(kvlist, NFB_ARG_RXHDR_DYNFIELD);
+		if (arg_val && strcmp(arg_val, "1") == 0)
+			ifc_params.flags |= NFB_FLAG_NDP_DF_HEADER;
 
 		arg_val = rte_kvargs_get(kvlist, NFB_ARG_RETA_INDEX_GLOBAL);
 		if (arg_val && strcmp(arg_val, "1") == 0)

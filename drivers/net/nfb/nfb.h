@@ -45,13 +45,16 @@ extern int nfb_logtype;
 #define RTE_NFB_DRIVER_NAME net_nfb
 
 #define NFB_FLAG_RETA_INDEX_GLOBAL RTE_BIT64(0)
+#define NFB_FLAG_NDP_DF_HEADER RTE_BIT64(1)
 
 /* Device arguments */
 #define NFB_ARG_PORT "port"
 #define NFB_ARG_RETA_INDEX_GLOBAL "reta_index_global"
+#define NFB_ARG_RXHDR_DYNFIELD "rxhdr_dynfield"
 
 #define NFB_COMMON_ARGS \
 	NFB_ARG_PORT "=<number>" \
+	NFB_ARG_RXHDR_DYNFIELD "=<0|1>" \
 	NFB_ARG_RETA_INDEX_GLOBAL "=<0|1>" \
 	""
 
