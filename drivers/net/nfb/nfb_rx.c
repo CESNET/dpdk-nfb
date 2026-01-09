@@ -175,6 +175,8 @@ nfb_eth_rx_queue_init(struct rte_eth_dev *dev,
 	rxq->rx_bytes = 0;
 	rxq->err_pkts = 0;
 
+	rxq->deferred_start = rx_conf->rx_deferred_start;
+
 	for (i = 0; i < NDP_RXHDR_CNT; i++) {
 		ofp = &rxq->ofp[i];
 		him_o = 0;

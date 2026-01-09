@@ -35,6 +35,7 @@ struct ndp_tx_queue {
 	/* native queue driver variables */
 	uint32_t fdp; /* Freed mbufs descriptor pointer (behind hdp) */
 	uint16_t nb_tx_desc;
+	bool deferred_start;
 };
 
 uint16_t nfb_ndp_queue_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);

@@ -220,15 +220,21 @@ nfb_eth_dev_start(struct rte_eth_dev *dev)
 	uint16_t nb_tx = dev->data->nb_tx_queues;
 
 	for (i = 0; i < nb_rx; i++) {
-		ret = nfb_eth_rx_queue_start(dev, i);
-		if (ret != 0)
-			goto err_rx;
+		struct ndp_rx_queue *rxq = dev->data->rx_queues[i];
+		if (!rxq->deferred_start) {
+			ret = nfb_eth_rx_queue_start(dev, i);
+			if (ret != 0)
+				goto err_rx;
+		}
 	}
 
 	for (i = 0; i < nb_tx; i++) {
-		ret = nfb_eth_tx_queue_start(dev, i);
-		if (ret != 0)
-			goto err_tx;
+		struct ndp_tx_queue *txq = dev->data->tx_queues[i];
+		if (!txq->deferred_start) {
+			ret = nfb_eth_tx_queue_start(dev, i);
+			if (ret != 0)
+				goto err_tx;
+		}
 	}
 
 	return 0;

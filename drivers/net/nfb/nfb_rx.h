@@ -83,6 +83,7 @@ struct ndp_rx_queue {
 	struct ndp_rx_offload_parser ofp[NDP_RXHDR_CNT];        /* known headers for offload */
 
 	enum nfb_queue_driver queue_driver;
+	bool deferred_start;
 
 	/* native queue driver variables*/
 	struct ndp_ctrl *ctrl;
