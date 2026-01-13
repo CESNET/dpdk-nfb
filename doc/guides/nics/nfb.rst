@@ -100,6 +100,35 @@ provide all PCI endpoints listed in the `nfb-info -v` in the `allow` argument.
 Features
 --------
 
+Queue drivers
+~~~~~~~~~~~~~
+
+The DPDK NFB driver enables the user to choose the queue driver implementation.
+
+The Native driver is the default and provides the best throughput parameters. It prepares
+descriptors and communicates directly with the DMA controller in firmware with minimal overhead.
+
+The NDP driver copies data from mbuf to NDP buffers allocated in kernels (and vice versa).
+It is not optimal for throughput, but allows the user to run more applications
+on the same DMA controller simultaneously.
+
+The driver is selected with the help of the `queue_driver` item of the `allow` argument as follows:
+
+.. code-block:: console
+
+  -a 0000:01:00.0,queue_driver=native
+
+.. code-block:: console
+
+  -a 0000:01:00.0,queue_driver=ndp
+
+.. note::
+
+   For the best throughput of native driver, it is suitable to use more mempools for RX queues.
+   This can maximize usage of compressed 64b descriptors over full 128b (2x64b) descriptors
+   per mbuf, as the bits 64-30 of mbuf address vary minimally or not at all.
+
+
 Timestamps
 ~~~~~~~~~~
 
