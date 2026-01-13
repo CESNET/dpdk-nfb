@@ -143,6 +143,61 @@ containing received frames and timestamp is inserted into the `rte_mbuf` struct.
 The timestamp is an `uint64_t` field and holds the number of nanoseconds
 elapsed since 1.1.1970 00:00:00 UTC.
 
+
+Global RETA index
+~~~~~~~~~~~~~~~~~
+
+The PMD supports RSS with RETA, which is configurable for every port.
+Default configuration routes data only to queues associated with the corresponding port.
+Firmware with a crossbar allows to mixing traffic between queues of different ports,
+which is helpful for processing biflows.
+
+To enable this feature, use the `reta_index_global` item of the `allow` argument:
+
+.. code-block:: console
+
+   -a 0000:01:00.0,reta_index_global=1
+
+and then set the target queue ID used in the RETA table,
+not as a port-wide but as a card-wide number.
+
+Custom Rx packet headers
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Most of the metadata parsed from the packet header is filled into mbuf:
+RSS hash, VLAN, IP checksum, L4 checksum, packet type.
+
+NDK-based firmware can provide a custom header (metadata) format, which is available
+for the DPDK application via dynfield and needs to be enabled first:
+
+.. code-block:: console
+
+   -a 0000:01:00.0,rxhdr_dynfield=1
+
+This allows the user to lookup for dynflag/dynfields:
+
+ - `rte_net_nfb_dynflag_header_vld`: bit number in mbuf->ol_flags;
+   bit is set when the custom header is valid;
+
+ - `rte_net_nfb_dynfield_header_offset`: 16b offset from mbuf->buf_addr;
+   where the custom header is located;
+
+ - `rte_net_nfb_dynfield_header_len`: 16b header length;
+ - `rte_net_nfb_dynfield_ndp_flags`: currently for internal use.
+
+Then this approach can be used in the application (check for value validity!):
+
+.. code-block:: c
+
+   struct my_header {
+      ...
+   };
+   int hdr_vld = mbuf->ol_flags &
+         RTE_BIT64(rte_mbuf_dynflag_lookup("rte_net_nfb_dynfield_header_vld", NULL));
+   int hdr_off = rte_mbuf_dynfield_lookup("rte_net_nfb_dynfield_header_offset", NULL)
+   struct my_header *hdr = (struct my_header *)
+         (mbuf->buf_addr + *RTE_MBUF_DYNFIELD(mbuf, hdr_off, uint16_t*));
+
 Simulation
 ~~~~~~~~~~
 
